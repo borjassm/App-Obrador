@@ -22,7 +22,7 @@ export default function CloseDailyTab() {
 
     const { error } = await submit(session.user.id);
     if (error) {
-      Alert.alert('Error guardando cierre', error.message);
+      Alert.alert('Error guardando cierre', String(error));
       return;
     }
 

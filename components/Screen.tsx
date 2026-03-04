@@ -1,13 +1,35 @@
-import { PropsWithChildren } from 'react';
-import { SafeAreaView, StyleSheet, View } from 'react-native';
+import { type PropsWithChildren } from 'react';
+import { SafeAreaView, ScrollView, StyleSheet, View } from 'react-native';
 
-export const Screen = ({ children }: PropsWithChildren) => (
+import { Colors, Spacing } from '@/constants/theme';
+
+interface Props extends PropsWithChildren {
+  scrollable?: boolean;
+  noPadding?: boolean;
+}
+
+export const Screen = ({ children, scrollable, noPadding }: Props) => (
   <SafeAreaView style={styles.safe}>
-    <View style={styles.container}>{children}</View>
+    {scrollable ? (
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.content, noPadding && styles.noPad]}
+        showsVerticalScrollIndicator={false}
+      >
+        {children}
+      </ScrollView>
+    ) : (
+      <View style={[styles.container, noPadding && styles.noPad]}>
+        {children}
+      </View>
+    )}
   </SafeAreaView>
 );
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#F8FAFC' },
-  container: { flex: 1, padding: 16, gap: 12 }
+  safe: { flex: 1, backgroundColor: Colors.bgBase },
+  scroll: { flex: 1 },
+  content: { padding: Spacing.lg, gap: Spacing.md, paddingBottom: Spacing.xxxl },
+  container: { flex: 1, padding: Spacing.lg, gap: Spacing.md },
+  noPad: { padding: 0 },
 });
