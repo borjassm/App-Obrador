@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>App Obrador - Gestión integral de obrador</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #FDF8F3;
+            color: #3A2E26;
+            line-height: 1.6;
+        }
+        .hero {
+            background: linear-gradient(135deg, #8B5E3C 0%, #6B4226 100%);
+            color: #FDF8F3;
+            text-align: center;
+            padding: 80px 20px 60px;
+        }
+        .hero h1 { font-size: 3rem; margin-bottom: 10px; }
+        .hero p { font-size: 1.3rem; opacity: 0.9; max-width: 600px; margin: 0 auto; }
+        .badge {
+            display: inline-block;
+            margin-top: 30px;
+        }
+        .badge img { height: 54px; }
+        .container { max-width: 900px; margin: 0 auto; padding: 60px 20px; }
+        .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 30px; margin: 40px 0; }
+        .feature {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+        }
+        .feature .icon { font-size: 2.5rem; margin-bottom: 12px; }
+        .feature h3 { color: #8B5E3C; margin-bottom: 8px; font-size: 1.2rem; }
+        .feature p { color: #6B6B6B; font-size: 0.95rem; }
+        h2 { color: #8B5E3C; font-size: 2rem; text-align: center; margin-bottom: 10px; }
+        .subtitle { text-align: center; color: #6B6B6B; margin-bottom: 40px; font-size: 1.1rem; }
+        .nav-links {
+            text-align: center;
+            padding: 20px;
+            background: white;
+            border-bottom: 1px solid #EDE5DA;
+        }
+        .nav-links a {
+            color: #8B5E3C;
+            text-decoration: none;
+            margin: 0 15px;
+            font-weight: 500;
+        }
+        .nav-links a:hover { text-decoration: underline; }
+        footer {
+            text-align: center;
+            padding: 40px 20px;
+            color: #999;
+            font-size: 0.9rem;
+            border-top: 1px solid #EDE5DA;
+        }
+    </style>
+</head>
+<body>
+    <nav class="nav-links">
+        <a href="index.html">Inicio</a>
+        <a href="privacidad.html">Privacidad</a>
+        <a href="soporte.html">Soporte</a>
+    </nav>
+
+    <div class="hero">
+        <h1>App Obrador</h1>
+        <p>Gestiona tu obrador artesano desde el iPad. Produccion, sobrantes, ventas, costes y planificacion inteligente.</p>
+    </div>
+
+    <div class="container">
+        <h2>Funcionalidades</h2>
+        <p class="subtitle">Todo lo que necesitas para gestionar tu obrador en una sola app</p>
+
+        <div class="features">
+            <div class="feature">
+                <div class="icon">📦</div>
+                <h3>Produccion diaria</h3>
+                <p>Registra la produccion organizada por familias: panaderia, bolleria, dulce, salado y mas.</p>
+            </div>
+            <div class="feature">
+                <div class="icon">📋</div>
+                <h3>Planificacion a 3 dias</h3>
+                <p>Pipeline inteligente: hornear, fermentar y amasar. Con datos meteorologicos y festivos.</p>
+            </div>
+            <div class="feature">
+                <div class="icon">📊</div>
+                <h3>Control de sobrantes</h3>
+                <p>Registra mermas por ubicacion. Analitica para reducir desperdicios y optimizar produccion.</p>
+            </div>
+            <div class="feature">
+                <div class="icon">💰</div>
+                <h3>Ventas y analitica</h3>
+                <p>Dashboard con graficos de tendencia, ranking de productos y KPIs de facturacion.</p>
+            </div>
+            <div class="feature">
+                <div class="icon">💶</div>
+                <h3>Costes y margenes</h3>
+                <p>Gestion de costes unitarios, calculo de margenes y rentabilidad por producto.</p>
+            </div>
+            <div class="feature">
+                <div class="icon">🏭</div>
+                <h3>Multi-ubicacion</h3>
+                <p>Gestiona nave y tienda desde una sola app con estado en tiempo real de cada punto.</p>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        &copy; 2026 App Obrador. Todos los derechos reservados.
+    </footer>
+</body>
+</html>

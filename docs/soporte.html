@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Soporte - App Obrador</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #FDF8F3;
+            color: #3A2E26;
+            line-height: 1.8;
+        }
+        .nav-links {
+            text-align: center;
+            padding: 20px;
+            background: white;
+            border-bottom: 1px solid #EDE5DA;
+        }
+        .nav-links a {
+            color: #8B5E3C;
+            text-decoration: none;
+            margin: 0 15px;
+            font-weight: 500;
+        }
+        .nav-links a:hover { text-decoration: underline; }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 60px 20px;
+        }
+        h1 {
+            color: #8B5E3C;
+            font-size: 2.2rem;
+            margin-bottom: 30px;
+        }
+        h2 {
+            color: #8B5E3C;
+            font-size: 1.4rem;
+            margin: 35px 0 15px;
+        }
+        p { color: #555; margin-bottom: 12px; }
+        .contact-card {
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+            text-align: center;
+            margin: 40px 0;
+        }
+        .contact-card .icon { font-size: 3rem; margin-bottom: 15px; }
+        .contact-card h3 { color: #8B5E3C; margin-bottom: 10px; font-size: 1.3rem; }
+        .contact-card a {
+            color: #2A9D8F;
+            font-size: 1.2rem;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .contact-card a:hover { text-decoration: underline; }
+        .faq { margin: 40px 0; }
+        .faq details {
+            background: white;
+            border-radius: 12px;
+            padding: 20px 25px;
+            margin-bottom: 12px;
+            box-shadow: 0 1px 6px rgba(0,0,0,0.04);
+        }
+        .faq summary {
+            font-weight: 600;
+            color: #8B5E3C;
+            cursor: pointer;
+            font-size: 1.05rem;
+        }
+        .faq details p { margin-top: 12px; }
+        footer {
+            text-align: center;
+            padding: 40px 20px;
+            color: #999;
+            font-size: 0.9rem;
+            border-top: 1px solid #EDE5DA;
+        }
+    </style>
+</head>
+<body>
+    <nav class="nav-links">
+        <a href="index.html">Inicio</a>
+        <a href="privacidad.html">Privacidad</a>
+        <a href="soporte.html">Soporte</a>
+    </nav>
+
+    <div class="container">
+        <h1>Soporte</h1>
+        <p>Estamos aqui para ayudarte con cualquier duda o problema que tengas con App Obrador.</p>
+
+        <div class="contact-card">
+            <div class="icon">📧</div>
+            <h3>Contacta con nosotros</h3>
+            <p>Respondemos en menos de 24 horas</p>
+            <a href="mailto:soporte@appobrador.com">soporte@appobrador.com</a>
+        </div>
+
+        <h2>Preguntas frecuentes</h2>
+        <div class="faq">
+            <details>
+                <summary>Como registro la produccion del dia?</summary>
+                <p>Ve a la pestana Obrador > Produccion diaria. Selecciona la fecha y rellena las cantidades de cada producto organizadas por familia.</p>
+            </details>
+            <details>
+                <summary>Como registro los sobrantes?</summary>
+                <p>Desde la pantalla de Inicio, pulsa en la ubicacion (Nave o Tienda) y registra las cantidades sobrantes de cada producto.</p>
+            </details>
+            <details>
+                <summary>Que es el Pipeline de planificacion?</summary>
+                <p>Es un sistema de planificacion a 3 dias que te indica que hornear manana, que fermentar hoy y que amasar hoy, basandose en datos historicos, meteorologia y festivos.</p>
+            </details>
+            <details>
+                <summary>Puedo exportar mis datos?</summary>
+                <p>Si, desde la seccion de Analitica puedes exportar los datos de sobrantes a formato Excel (CSV).</p>
+            </details>
+            <details>
+                <summary>Como elimino mi cuenta?</summary>
+                <p>Envía un correo a soporte@appobrador.com solicitando la eliminacion de tu cuenta y todos los datos asociados.</p>
+            </details>
+        </div>
+    </div>
+
+    <footer>
+        &copy; 2026 App Obrador. Todos los derechos reservados.
+    </footer>
+</body>
+</html>
