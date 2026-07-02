@@ -4,8 +4,7 @@ export interface Product {
   id: string;
   name: string;
   family: string;
-  is_weekend_special: boolean;
-  is_christmas_special: boolean;
+  sale_price: number | null;
 }
 
 export interface ProductGroup {
@@ -17,8 +16,9 @@ export const productService = {
   async list() {
     return supabase
       .from('products')
-      .select('id,name,family,is_weekend_special,is_christmas_special')
+      .select('id,name,family,sale_price,display_order')
       .eq('is_active', true)
+      .order('display_order', { ascending: true, nullsFirst: false })
       .order('name');
   },
 

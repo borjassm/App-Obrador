@@ -7,6 +7,7 @@ import { productService, type Product, type ProductGroup } from '@/services/prod
 export interface ProductEntry {
   product: Product;
   savedQty: number;
+  discardedQty: number;
   dirty: boolean;
 }
 
@@ -18,9 +19,11 @@ interface UseProductEntriesReturn {
   loading: boolean;
   saving: boolean;
   updateEntry: (productId: string, value: number) => void;
+  updateDiscarded: (productId: string, value: number) => void;
   saveEntry: (productId: string) => Promise<void>;
   closeDay: () => Promise<{ error: Error | null }>;
   totalSobrantes: number;
+  totalDescartado: number;
   filledCount: number;
   totalCount: number;
 }
@@ -79,6 +82,7 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
         entryMap.set(product.id, {
           product,
           savedQty: existing?.saved_qty ?? 0,
+          discardedQty: existing?.discarded_qty ?? 0,
           dirty: false,
         });
       }
@@ -90,22 +94,11 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
     init();
   }, [locationId, session?.user.id]);
 
-  // Update entry value and schedule auto-save with debounce
-  const updateEntry = useCallback((productId: string, value: number) => {
-    setEntries((prev) => {
-      const next = new Map(prev);
-      const entry = next.get(productId);
-      if (entry) {
-        next.set(productId, { ...entry, savedQty: value, dirty: true });
-      }
-      return next;
-    });
-
-    // Clear existing timer for this product
+  // Persist one product's entry (saved + discarded) after a debounce
+  const scheduleUpsert = useCallback((productId: string) => {
     const existingTimer = debounceTimers.current.get(productId);
     if (existingTimer) clearTimeout(existingTimer);
 
-    // Schedule auto-save after 500ms
     debounceTimers.current.set(productId, setTimeout(async () => {
       const sid = sessionIdRef.current;
       const currentEntries = entriesRef.current;
@@ -113,7 +106,7 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
       if (!sid || !entry) return;
 
       setSaving(true);
-      await sessionService.upsertSingleEntry(sid, productId, entry.savedQty, 0);
+      await sessionService.upsertSingleEntry(sid, productId, entry.savedQty, entry.discardedQty);
 
       setEntries((prev) => {
         const next = new Map(prev);
@@ -126,13 +119,39 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
     }, 500));
   }, []);
 
+  // Update saved value and schedule auto-save with debounce
+  const updateEntry = useCallback((productId: string, value: number) => {
+    setEntries((prev) => {
+      const next = new Map(prev);
+      const entry = next.get(productId);
+      if (entry) {
+        next.set(productId, { ...entry, savedQty: value, dirty: true });
+      }
+      return next;
+    });
+    scheduleUpsert(productId);
+  }, [scheduleUpsert]);
+
+  // Update discarded value and schedule auto-save with debounce
+  const updateDiscarded = useCallback((productId: string, value: number) => {
+    setEntries((prev) => {
+      const next = new Map(prev);
+      const entry = next.get(productId);
+      if (entry) {
+        next.set(productId, { ...entry, discardedQty: value, dirty: true });
+      }
+      return next;
+    });
+    scheduleUpsert(productId);
+  }, [scheduleUpsert]);
+
   const saveEntry = useCallback(async (productId: string) => {
     if (!sessionId) return;
     const entry = entries.get(productId);
     if (!entry || !entry.dirty) return;
 
     setSaving(true);
-    await sessionService.upsertSingleEntry(sessionId, productId, entry.savedQty, 0);
+    await sessionService.upsertSingleEntry(sessionId, productId, entry.savedQty, entry.discardedQty);
 
     setEntries((prev) => {
       const next = new Map(prev);
@@ -149,7 +168,7 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
     // Save all dirty entries first
     for (const [productId, entry] of entries) {
       if (entry.dirty) {
-        await sessionService.upsertSingleEntry(sessionId, productId, entry.savedQty, 0);
+        await sessionService.upsertSingleEntry(sessionId, productId, entry.savedQty, entry.discardedQty);
       }
     }
 
@@ -169,10 +188,12 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
 
   // Computed
   let totalSobrantes = 0;
+  let totalDescartado = 0;
   let filledCount = 0;
   for (const entry of entries.values()) {
     totalSobrantes += entry.savedQty;
-    if (entry.savedQty > 0) filledCount++;
+    totalDescartado += entry.discardedQty;
+    if (entry.savedQty > 0 || entry.discardedQty > 0) filledCount++;
   }
 
   return {
@@ -183,9 +204,11 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
     loading,
     saving,
     updateEntry,
+    updateDiscarded,
     saveEntry,
     closeDay,
     totalSobrantes,
+    totalDescartado,
     filledCount,
     totalCount: entries.size,
   };

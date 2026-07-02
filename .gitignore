@@ -16,3 +16,6 @@ scripts/
 
 expo-env.d.ts
 # @end expo-cli
+# Local env
+.env
+.env*.local

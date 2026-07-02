@@ -21,21 +21,20 @@ export default function ProductDetail() {
   const { session } = useSession();
 
   const [product, setProduct] = useState<{ name: string; family: string } | null>(null);
-  const [sobrantes, setSobrantes] = useState(0);
+  const [savedQty, setSavedQty] = useState(0);
+  const [discardedQty, setDiscardedQty] = useState(0);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const sobrantesRef = useRef(0);
+  const savedRef = useRef(0);
+  const discardedRef = useRef(0);
   const sessionIdRef = useRef<string | null>(null);
 
   // Keep refs in sync
-  useEffect(() => {
-    sobrantesRef.current = sobrantes;
-  }, [sobrantes]);
-  useEffect(() => {
-    sessionIdRef.current = sessionId;
-  }, [sessionId]);
+  useEffect(() => { savedRef.current = savedQty; }, [savedQty]);
+  useEffect(() => { discardedRef.current = discardedQty; }, [discardedQty]);
+  useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
 
   // Load product info and existing entry
   useEffect(() => {
@@ -58,13 +57,14 @@ export default function ProductDetail() {
         // Load existing entry
         const { data: entry } = await supabase
           .from('daily_product_entries')
-          .select('saved_qty')
+          .select('saved_qty, discarded_qty')
           .eq('daily_session_id', sess.id)
           .eq('product_id', productId)
           .maybeSingle();
 
         if (entry) {
-          setSobrantes(entry.saved_qty ?? 0);
+          setSavedQty(entry.saved_qty ?? 0);
+          setDiscardedQty(entry.discarded_qty ?? 0);
         }
       }
     };
@@ -72,41 +72,43 @@ export default function ProductDetail() {
     load();
   }, [productId, locationId, session?.user.id]);
 
-  // Auto-save with debounce
+  // Auto-save with debounce (saves both saved + discarded)
   const doSave = useCallback(async () => {
     const sid = sessionIdRef.current;
     if (!sid || !productId) return;
 
     setSaveStatus('saving');
-    await sessionService.upsertSingleEntry(sid, productId, sobrantesRef.current, 0);
+    await sessionService.upsertSingleEntry(sid, productId, savedRef.current, discardedRef.current);
     setSaveStatus('saved');
 
     // Reset to idle after showing "saved"
     setTimeout(() => setSaveStatus('idle'), 1500);
   }, [productId]);
 
-  const handleChange = useCallback((value: number) => {
-    setSobrantes(value);
+  const scheduleSave = useCallback(() => {
     setSaveStatus('idle');
-
-    // Clear previous debounce
     if (debounceRef.current) clearTimeout(debounceRef.current);
-
-    // Schedule save after 500ms
-    debounceRef.current = setTimeout(() => {
-      doSave();
-    }, 500);
+    debounceRef.current = setTimeout(() => { doSave(); }, 500);
   }, [doSave]);
+
+  const handleSavedChange = useCallback((value: number) => {
+    setSavedQty(value);
+    scheduleSave();
+  }, [scheduleSave]);
+
+  const handleDiscardedChange = useCallback((value: number) => {
+    setDiscardedQty(value);
+    scheduleSave();
+  }, [scheduleSave]);
 
   // Cleanup debounce on unmount — save immediately if pending
   useEffect(() => {
     return () => {
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
-        // Fire a final save
         const sid = sessionIdRef.current;
         if (sid && productId) {
-          sessionService.upsertSingleEntry(sid, productId, sobrantesRef.current, 0);
+          sessionService.upsertSingleEntry(sid, productId, savedRef.current, discardedRef.current);
         }
       }
     };
@@ -138,26 +140,32 @@ export default function ProductDetail() {
         </View>
       </View>
 
-      {/* Sobrantes stepper */}
-      <View style={styles.sobrantesSection}>
-        <Text style={styles.sobrantesLabel}>Sobrantes</Text>
-
+      {/* Guardado (para mañana) */}
+      <View style={styles.counterSection}>
+        <Text style={styles.counterLabel}>Guardado</Text>
+        <Text style={styles.counterHint}>Lo que se guarda para vender mañana</Text>
         <View style={styles.display}>
-          <Text style={[styles.number, { color: Colors.primary }]}>{sobrantes}</Text>
+          <Text style={[styles.number, { color: Colors.primary }]}>{savedQty}</Text>
           <Text style={styles.unit}>uds</Text>
         </View>
+        <Stepper value={savedQty} onChange={handleSavedChange} color={Colors.primary} min={0} />
+      </View>
 
-        <Stepper value={sobrantes} onChange={handleChange} color={Colors.primary} min={0} />
-
-        {/* Save status indicator */}
-        <View style={styles.statusRow}>
-          {saveStatus === 'saving' && (
-            <Text style={styles.statusSaving}>Guardando…</Text>
-          )}
-          {saveStatus === 'saved' && (
-            <Text style={styles.statusSaved}>Guardado</Text>
-          )}
+      {/* Tirado / Merma */}
+      <View style={[styles.counterSection, styles.discardSection]}>
+        <Text style={styles.counterLabel}>Tirado / Merma</Text>
+        <Text style={styles.counterHint}>Lo que se desecha (pérdida)</Text>
+        <View style={styles.display}>
+          <Text style={[styles.number, { color: Colors.danger }]}>{discardedQty}</Text>
+          <Text style={styles.unit}>uds</Text>
         </View>
+        <Stepper value={discardedQty} onChange={handleDiscardedChange} color={Colors.danger} min={0} />
+      </View>
+
+      {/* Save status indicator */}
+      <View style={styles.statusRow}>
+        {saveStatus === 'saving' && <Text style={styles.statusSaving}>Guardando…</Text>}
+        {saveStatus === 'saved' && <Text style={styles.statusSaved}>Guardado ✓</Text>}
       </View>
 
       {/* Back button */}
@@ -184,7 +192,7 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
-    paddingVertical: Spacing.xl,
+    paddingVertical: Spacing.lg,
     gap: Spacing.sm,
   },
   headerEmoji: {
@@ -204,14 +212,24 @@ const styles = StyleSheet.create({
   familyName: {
     ...Typography.labelSmall,
   },
-  sobrantesSection: {
+  counterSection: {
     alignItems: 'center',
-    gap: Spacing.lg,
-    paddingVertical: Spacing.xl,
+    gap: Spacing.md,
+    paddingVertical: Spacing.lg,
   },
-  sobrantesLabel: {
+  discardSection: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderLight,
+    marginTop: Spacing.sm,
+  },
+  counterLabel: {
     ...Typography.headingMedium,
     color: Colors.textPrimary,
+  },
+  counterHint: {
+    ...Typography.bodySmall,
+    color: Colors.textMuted,
+    marginTop: -Spacing.xs,
   },
   display: {
     flexDirection: 'row',
@@ -230,6 +248,7 @@ const styles = StyleSheet.create({
   statusRow: {
     height: 24,
     justifyContent: 'center',
+    alignItems: 'center',
   },
   statusSaving: {
     ...Typography.bodySmall,

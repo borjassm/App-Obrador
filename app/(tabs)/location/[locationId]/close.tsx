@@ -19,6 +19,7 @@ export default function SobrantesScreen() {
     entries,
     loading,
     totalSobrantes,
+    totalDescartado,
     filledCount,
     totalCount,
     closeDay,
@@ -34,7 +35,7 @@ export default function SobrantesScreen() {
     if (error) {
       Alert.alert('Error', String(error));
     } else {
-      Alert.alert('✅ Sobrantes registrados', `${totalSobrantes} unidades sobrantes en ${filledCount} productos`);
+      Alert.alert('✅ Registro guardado', `${totalSobrantes} uds guardadas · ${totalDescartado} uds tiradas, en ${filledCount} productos`);
       router.back();
     }
   };
@@ -75,6 +76,7 @@ export default function SobrantesScreen() {
                   name={product.name}
                   family={product.family}
                   savedQty={entry?.savedQty}
+                  discardedQty={entry?.discardedQty}
                   onPress={() =>
                     router.push(`/(tabs)/location/${locationId}/product/${product.id}`)
                   }
@@ -102,7 +104,8 @@ export default function SobrantesScreen() {
         message="Esto marcará el día como completo. Podrás ver el resumen después."
         summary={[
           { label: 'Productos registrados', value: `${filledCount} de ${totalCount}` },
-          { label: 'Total sobrantes', value: `${totalSobrantes} uds`, color: Colors.primary },
+          { label: 'Total guardado', value: `${totalSobrantes} uds`, color: Colors.primary },
+          { label: 'Total tirado (merma)', value: `${totalDescartado} uds`, color: Colors.danger },
         ]}
         confirmLabel="Finalizar"
         onConfirm={handleClose}

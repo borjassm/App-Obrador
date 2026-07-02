@@ -14,7 +14,6 @@ import { useLocationStatus } from '@/hooks/useLocationStatus';
 interface LocationRow {
   id: string;
   name: string;
-  kind: string;
 }
 
 function LocationCardWithStatus({ location }: { location: LocationRow }) {

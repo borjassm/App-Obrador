@@ -8,13 +8,16 @@ interface Props {
   name: string;
   family: string;
   savedQty?: number;
+  discardedQty?: number;
   onPress: () => void;
 }
 
-export default function ProductCard({ name, family, savedQty, onPress }: Props) {
+export default function ProductCard({ name, family, savedQty, discardedQty, onPress }: Props) {
   const familyColor = getFamilyColor(family);
   const emoji = getProductEmoji(name);
-  const hasData = (savedQty ?? 0) > 0;
+  const saved = savedQty ?? 0;
+  const discarded = discardedQty ?? 0;
+  const hasData = saved > 0 || discarded > 0;
 
   return (
     <Card onPress={onPress} shadow="sm" style={styles.card}>
@@ -29,9 +32,17 @@ export default function ProductCard({ name, family, savedQty, onPress }: Props) 
             </Text>
           </View>
           {hasData ? (
-            <View style={[styles.qtyBadge, { backgroundColor: Colors.primaryLight + '20' }]}>
-              <Text style={[styles.qtyNum, { color: Colors.primary }]}>{savedQty}</Text>
-              <Text style={styles.qtyLabel}>uds</Text>
+            <View style={styles.badges}>
+              <View style={[styles.qtyBadge, { backgroundColor: Colors.primaryLight + '20' }]}>
+                <Text style={[styles.qtyNum, { color: Colors.primary }]}>{saved}</Text>
+                <Text style={styles.qtyLabel}>guard.</Text>
+              </View>
+              {discarded > 0 && (
+                <View style={[styles.qtyBadge, { backgroundColor: Colors.dangerLight }]}>
+                  <Text style={[styles.qtyNum, { color: Colors.danger }]}>{discarded}</Text>
+                  <Text style={styles.qtyLabel}>tirado</Text>
+                </View>
+              )}
             </View>
           ) : (
             <Text style={styles.pending}>Pendiente</Text>
@@ -73,6 +84,10 @@ const styles = StyleSheet.create({
   },
   family: {
     ...Typography.bodySmall,
+  },
+  badges: {
+    flexDirection: 'row',
+    gap: Spacing.xs,
   },
   qtyBadge: {
     alignItems: 'center',

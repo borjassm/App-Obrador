@@ -5,7 +5,7 @@ function todayISO(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-const SESSION_COLS = 'id, location_id, session_date, status, created_at, updated_at' as const;
+const SESSION_COLS = 'id, location_id, session_date, status, created_at' as const;
 
 export const sessionService = {
   async openSession(locationId: string, date: string, _userId: string): Promise<{ data: { id: string; status: string } | null; error: unknown }> {
@@ -42,7 +42,7 @@ export const sessionService = {
   async getSessionWithEntries(sessionId: string) {
     const { data: entries, error } = await supabase
       .from('daily_product_entries')
-      .select('product_id, saved_qty, discarded_qty, reason_code')
+      .select('product_id, saved_qty, discarded_qty, discard_reason')
       .eq('daily_session_id', sessionId);
 
     return { entries: entries ?? [], error };
@@ -64,7 +64,7 @@ export const sessionService = {
     productId: string,
     savedQty: number,
     discardedQty: number,
-    reasonCode?: string
+    discardReason?: string
   ) {
     return supabase
       .from('daily_product_entries')
@@ -74,11 +74,11 @@ export const sessionService = {
           product_id: productId,
           saved_qty: savedQty,
           discarded_qty: discardedQty,
-          reason_code: reasonCode ?? null,
+          discard_reason: discardReason ?? null,
         },
         { onConflict: 'daily_session_id,product_id' }
       )
-      .select('id, product_id, saved_qty, discarded_qty')
+      .select('id, product_id, saved_qty, discarded_qty, discard_reason')
       .single();
   },
 

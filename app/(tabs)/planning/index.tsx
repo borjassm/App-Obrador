@@ -1,125 +1,261 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import Badge from '@/components/Badge';
+import Button from '@/components/Button';
 import Card from '@/components/Card';
+import FilterPills from '@/components/FilterPills';
 import SectionHeader from '@/components/SectionHeader';
+import Stepper from '@/components/Stepper';
 import { Screen } from '@/components/Screen';
-import { Colors, Radius, Spacing, Typography, getFamilyColor } from '@/constants/theme';
-import { usePlanningData } from '@/hooks/usePlanningData';
+import { Colors, Radius, Shadows, Spacing, Typography } from '@/constants/theme';
+import { supabase } from '@/lib/supabase';
+import { analyticsService } from '@/services/analytics.service';
+import { planningService, type AccuracyStats, type Suggestion } from '@/services/planning.service';
 
-const CONFIDENCE_LABEL: Record<string, string> = {
-  high: 'Alta',
-  medium: 'Media',
-  low: 'Baja',
-};
+const WEEKDAY_LABELS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
 
-const CONFIDENCE_VARIANT: Record<string, 'success' | 'warning' | 'neutral'> = {
-  high: 'success',
-  medium: 'warning',
-  low: 'neutral',
-};
+function iso(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function dateWithOffset(days: number): Date {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+interface PlanItem extends Suggestion {
+  finalQty: number;       // sugerido u override del usuario
+  overridden: boolean;
+}
 
 export default function PlanningTab() {
-  const { plans, loading } = usePlanningData();
+  const [offset, setOffset] = useState<'1' | '2' | '0'>('1'); // mañana por defecto
+  const [items, setItems] = useState<PlanItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [accuracy, setAccuracy] = useState<AccuracyStats | null>(null);
+  const [editing, setEditing] = useState<PlanItem | null>(null);
+  const [draftQty, setDraftQty] = useState(0);
 
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowStr = tomorrow.toLocaleDateString('es-ES', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  });
+  const targetDate = useMemo(() => dateWithOffset(parseInt(offset, 10)), [offset]);
+  const targetISO = iso(targetDate);
+  const weekdayName = WEEKDAY_LABELS[targetDate.getDay()];
 
-  if (loading) {
-    return (
-      <Screen>
-        <View style={styles.loadingBox}>
-          <Text style={styles.loadingText}>Calculando planificación…</Text>
-        </View>
-      </Screen>
+  const load = useCallback(async () => {
+    setLoading(true);
+    setSavedAt(null);
+    try {
+      // Cerrar el ciclo de mejora continua para planes pasados con ventas ya cargadas
+      const latest = await analyticsService.latestDates();
+      if (latest?.latest_sale) {
+        const { data: pastPlans } = await supabase
+          .from('production_plans')
+          .select('plan_date')
+          .lte('plan_date', latest.latest_sale)
+          .order('plan_date', { ascending: false })
+          .limit(60);
+        const uniqueDates = [...new Set((pastPlans ?? []).map((p) => p.plan_date))].slice(0, 10);
+        for (const d of uniqueDates) await planningService.recordAccuracy(d);
+      }
+
+      const [suggestions, saved, stats] = await Promise.all([
+        planningService.suggestions(targetISO),
+        planningService.savedPlan(targetISO),
+        planningService.accuracyStats(90),
+      ]);
+
+      setItems(
+        suggestions.map((s) => {
+          const savedRow = saved.get(s.product_id);
+          const overridden = savedRow?.override_qty != null;
+          return {
+            ...s,
+            finalQty: overridden ? (savedRow!.override_qty as number) : s.suggested_qty,
+            overridden,
+          };
+        })
+      );
+      setAccuracy(stats);
+    } catch (e) {
+      console.log('[PlanningTab] error:', e);
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [targetISO]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const totalUnits = items.reduce((s, i) => s + i.finalQty, 0);
+  const editedCount = items.filter((i) => i.overridden).length;
+
+  const groups = useMemo(() => {
+    const map = new Map<string, PlanItem[]>();
+    for (const item of items) {
+      if (!map.has(item.family)) map.set(item.family, []);
+      map.get(item.family)!.push(item);
+    }
+    return [...map.entries()];
+  }, [items]);
+
+  const openEdit = (item: PlanItem) => {
+    setEditing(item);
+    setDraftQty(item.finalQty);
+  };
+
+  const applyEdit = () => {
+    if (!editing) return;
+    setItems((prev) =>
+      prev.map((i) =>
+        i.product_id === editing.product_id
+          ? { ...i, finalQty: draftQty, overridden: draftQty !== i.suggested_qty }
+          : i
+      )
     );
-  }
+    setEditing(null);
+  };
 
-  // Group by family
-  const grouped = new Map<string, typeof plans>();
-  for (const plan of plans) {
-    if (!grouped.has(plan.family)) grouped.set(plan.family, []);
-    grouped.get(plan.family)!.push(plan);
-  }
+  const savePlan = async () => {
+    setSaving(true);
+    const { error } = await planningService.savePlan(
+      targetISO,
+      items.map((i) => ({
+        product_id: i.product_id,
+        suggested_qty: i.suggested_qty,
+        override_qty: i.overridden ? i.finalQty : null,
+        confidence: i.confidence,
+      }))
+    );
+    setSaving(false);
+    if (error) {
+      Alert.alert('Error', 'No se pudo guardar el plan. Inténtalo de nuevo.');
+    } else {
+      setSavedAt(new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }));
+    }
+  };
 
   return (
     <Screen scrollable noPadding>
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>📋 Planificación</Text>
-        <Text style={styles.subtitle}>Producción sugerida para mañana</Text>
-        <View style={styles.datePill}>
-          <Text style={styles.dateText}>{tomorrowStr}</Text>
-        </View>
+        <Text style={styles.subtitle}>
+          Sugerencias para el {weekdayName} {targetDate.getDate()}/{targetDate.getMonth() + 1}, según tu histórico de ventas
+        </Text>
       </View>
 
-      {plans.length === 0 ? (
-        <View style={styles.emptyBox}>
-          <Text style={styles.emptyEmoji}>📭</Text>
-          <Text style={styles.emptyText}>Sin datos suficientes para planificar</Text>
-          <Text style={styles.emptyHint}>Registra sobrantes diarios y las sugerencias aparecerán aquí</Text>
+      <FilterPills
+        options={[
+          { key: '0', label: 'Hoy' },
+          { key: '1', label: 'Mañana' },
+          { key: '2', label: 'Pasado mañana' },
+        ]}
+        selected={offset}
+        onSelect={(k) => setOffset(k as '0' | '1' | '2')}
+      />
+
+      {/* Precisión del modelo */}
+      <Card style={styles.accuracyCard} shadow="sm">
+        {accuracy ? (
+          <>
+            <Text style={styles.accuracyTitle}>🎯 Precisión del modelo (90 días)</Text>
+            <Text style={styles.accuracyBig}>{Math.max(0, 100 - accuracy.mape).toFixed(0)}%</Text>
+            <Text style={styles.accuracyDetail}>
+              {accuracy.n} predicciones evaluadas · {accuracy.hit_rate}% con error ≤ 20%. El modelo se ajusta solo con cada día de ventas.
+            </Text>
+          </>
+        ) : (
+          <>
+            <Text style={styles.accuracyTitle}>🎯 Mejora continua activada</Text>
+            <Text style={styles.accuracyDetail}>
+              Cuando cargues ventas de días ya planificados, el modelo medirá su acierto y ajustará sus pesos por producto automáticamente.
+            </Text>
+          </>
+        )}
+      </Card>
+
+      {loading ? (
+        <View style={styles.loadingBox}>
+          <Text style={styles.loadingText}>Calculando sugerencias…</Text>
+        </View>
+      ) : items.length === 0 ? (
+        <View style={styles.loadingBox}>
+          <Text style={styles.loadingText}>Sin histórico de ventas para sugerir. Importa ventas del ERP.</Text>
         </View>
       ) : (
-        [...grouped.entries()].map(([family, familyPlans]) => (
-          <View key={family} style={styles.section}>
-            <View style={styles.sectionPad}>
-              <SectionHeader
-                title={family.charAt(0).toUpperCase() + family.slice(1)}
-                family={family}
-              />
-            </View>
-
-            {familyPlans.map((plan) => {
-              const familyColor = getFamilyColor(plan.family);
-              return (
-                <Card key={plan.productId} style={styles.planCard}>
-                  <View style={styles.planHeader}>
-                    <View style={[styles.familyDot, { backgroundColor: familyColor }]} />
-                    <Text style={styles.productName}>{plan.productName}</Text>
-                    <Badge
-                      label={CONFIDENCE_LABEL[plan.confidence] ?? 'Baja'}
-                      variant={CONFIDENCE_VARIANT[plan.confidence] ?? 'neutral'}
-                    />
-                  </View>
-
-                  {/* Suggested qty - hero number */}
-                  <View style={styles.suggestedRow}>
-                    <Text style={[styles.suggestedNum, { color: familyColor }]}>
-                      {plan.suggested}
+        <>
+          {groups.map(([family, groupItems]) => (
+            <View key={family} style={styles.section}>
+              <View style={styles.sectionPad}>
+                <SectionHeader
+                  title={family.charAt(0).toUpperCase() + family.slice(1)}
+                  family={family}
+                />
+              </View>
+              {groupItems.map((item) => (
+                <Pressable key={item.product_id} onPress={() => openEdit(item)} style={styles.row}>
+                  <View style={styles.rowInfo}>
+                    <Text style={styles.rowName} numberOfLines={1}>{item.name}</Text>
+                    <Text style={styles.rowExplain}>
+                      Media {weekdayName}: reciente {item.base_recent} · histórica {item.base_hist}
+                      {item.carryover > 0 ? ` · guardado ayer ${item.carryover}` : ''}
                     </Text>
-                    <Text style={styles.suggestedLabel}>uds sugeridas</Text>
                   </View>
+                  <Badge
+                    label={item.confidence === 'high' ? 'Alta' : item.confidence === 'medium' ? 'Media' : 'Baja'}
+                    variant={item.confidence === 'high' ? 'success' : item.confidence === 'medium' ? 'warning' : 'neutral'}
+                  />
+                  <View style={styles.qtyBox}>
+                    <Text style={[styles.qtyNum, item.overridden && { color: Colors.secondary }]}>
+                      {item.finalQty}
+                    </Text>
+                    <Text style={styles.qtyLabel}>{item.overridden ? 'ajustado' : 'sugerido'}</Text>
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+          ))}
 
-                  {/* Context row */}
-                  <View style={styles.contextRow}>
-                    <View style={styles.contextItem}>
-                      <Text style={styles.contextValue}>{plan.avgSaved7}</Text>
-                      <Text style={styles.contextLabel}>Prom 7d</Text>
-                    </View>
-                    <View style={styles.contextDivider} />
-                    <View style={styles.contextItem}>
-                      <Text style={styles.contextValue}>{plan.avgSaved30}</Text>
-                      <Text style={styles.contextLabel}>Prom 30d</Text>
-                    </View>
-                    <View style={styles.contextDivider} />
-                    <View style={styles.contextItem}>
-                      <Text style={[styles.contextValue, { color: Colors.danger }]}>
-                        {plan.avgDiscarded7}
-                      </Text>
-                      <Text style={styles.contextLabel}>Merma 7d</Text>
-                    </View>
-                  </View>
-                </Card>
-              );
-            })}
+          {/* Guardar */}
+          <View style={styles.footer}>
+            <Text style={styles.totalLine}>
+              {items.length} productos · {totalUnits.toLocaleString('es-ES')} uds totales
+              {editedCount > 0 ? ` · ${editedCount} ajustados por ti` : ''}
+            </Text>
+            <Button
+              title={saving ? 'Guardando…' : savedAt ? `Plan guardado (${savedAt}) — Guardar de nuevo` : 'Guardar plan de producción'}
+              onPress={savePlan}
+              disabled={saving}
+            />
           </View>
-        ))
+        </>
       )}
+
+      {/* Modal de ajuste */}
+      <Modal visible={!!editing} transparent animationType="slide" onRequestClose={() => setEditing(null)}>
+        <Pressable style={styles.backdrop} onPress={() => setEditing(null)}>
+          <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.sheetTitle}>Ajustar cantidad</Text>
+            <Text style={styles.sheetName}>{editing?.name}</Text>
+            <Text style={styles.sheetHint}>
+              Sugerido por el modelo: {editing?.suggested_qty} uds
+            </Text>
+            <View style={styles.sheetDisplay}>
+              <Text style={styles.sheetNumber}>{draftQty}</Text>
+              <Text style={styles.sheetUnit}>uds</Text>
+            </View>
+            <Stepper value={draftQty} onChange={setDraftQty} min={0} color={Colors.secondary} />
+            <View style={styles.sheetActions}>
+              <Button title="Cancelar" variant="ghost" onPress={() => setEditing(null)} />
+              <Button title="Aplicar" onPress={applyEdit} />
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <View style={styles.bottomPad} />
     </Screen>
@@ -127,15 +263,6 @@ export default function PlanningTab() {
 }
 
 const styles = StyleSheet.create({
-  loadingBox: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loadingText: {
-    ...Typography.bodyMedium,
-    color: Colors.textMuted,
-  },
   header: {
     padding: Spacing.lg,
     paddingTop: Spacing.xxl,
@@ -146,105 +273,134 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
   },
   subtitle: {
-    ...Typography.bodyMedium,
+    ...Typography.bodySmall,
     color: Colors.textSecondary,
   },
-  datePill: {
-    alignSelf: 'flex-start',
-    backgroundColor: Colors.secondary,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.xs,
-    borderRadius: Radius.full,
-    marginTop: Spacing.sm,
+  accuracyCard: {
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.md,
+    gap: Spacing.xs,
   },
-  dateText: {
-    ...Typography.labelSmall,
-    color: Colors.textOnPrimary,
-    textTransform: 'capitalize',
+  accuracyTitle: {
+    ...Typography.labelMedium,
+    color: Colors.textPrimary,
+  },
+  accuracyBig: {
+    ...Typography.numberMedium,
+    color: Colors.success,
+  },
+  accuracyDetail: {
+    ...Typography.bodySmall,
+    color: Colors.textMuted,
+  },
+  loadingBox: {
+    alignItems: 'center',
+    paddingVertical: Spacing.xxxl,
+  },
+  loadingText: {
+    ...Typography.bodyMedium,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    paddingHorizontal: Spacing.xl,
   },
   section: {
-    marginBottom: Spacing.lg,
+    marginTop: Spacing.xl,
   },
   sectionPad: {
     paddingHorizontal: Spacing.lg,
     marginBottom: Spacing.sm,
   },
-  planCard: {
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.md,
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.bgCard,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    marginBottom: 1,
     gap: Spacing.md,
   },
-  planHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-  },
-  familyDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  productName: {
-    ...Typography.labelMedium,
-    color: Colors.textPrimary,
+  rowInfo: {
     flex: 1,
-  },
-  suggestedRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: Spacing.sm,
-  },
-  suggestedNum: {
-    ...Typography.numberMedium,
-  },
-  suggestedLabel: {
-    ...Typography.bodySmall,
-    color: Colors.textMuted,
-  },
-  contextRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.bgBase,
-    borderRadius: Radius.sm,
-    padding: Spacing.md,
-  },
-  contextItem: {
-    flex: 1,
-    alignItems: 'center',
     gap: 2,
   },
-  contextValue: {
-    ...Typography.numberSmall,
+  rowName: {
+    ...Typography.labelMedium,
     color: Colors.textPrimary,
   },
-  contextLabel: {
+  rowExplain: {
     ...Typography.bodySmall,
     color: Colors.textMuted,
     fontSize: 11,
   },
-  contextDivider: {
-    width: 1,
-    height: 28,
-    backgroundColor: Colors.divider,
-  },
-  emptyBox: {
+  qtyBox: {
     alignItems: 'center',
-    paddingVertical: Spacing.xxxl,
+    minWidth: 64,
+  },
+  qtyNum: {
+    ...Typography.numberSmall,
+    color: Colors.primary,
+  },
+  qtyLabel: {
+    ...Typography.bodySmall,
+    color: Colors.textMuted,
+    fontSize: 10,
+  },
+  footer: {
+    padding: Spacing.lg,
+    paddingTop: Spacing.xl,
     gap: Spacing.md,
   },
-  emptyEmoji: {
-    fontSize: 48,
-  },
-  emptyText: {
-    ...Typography.bodyLarge,
+  totalLine: {
+    ...Typography.bodySmall,
     color: Colors.textSecondary,
     textAlign: 'center',
   },
-  emptyHint: {
+  backdrop: {
+    flex: 1,
+    backgroundColor: Colors.overlay,
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    backgroundColor: Colors.bgCard,
+    borderTopLeftRadius: Radius.xl,
+    borderTopRightRadius: Radius.xl,
+    padding: Spacing.xl,
+    gap: Spacing.lg,
+    alignItems: 'center',
+    ...Shadows.lg,
+  },
+  sheetTitle: {
+    ...Typography.labelSmall,
+    color: Colors.textMuted,
+  },
+  sheetName: {
+    ...Typography.headingMedium,
+    color: Colors.textPrimary,
+    textAlign: 'center',
+  },
+  sheetHint: {
     ...Typography.bodySmall,
     color: Colors.textMuted,
-    textAlign: 'center',
-    paddingHorizontal: Spacing.xxl,
+  },
+  sheetDisplay: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: Spacing.sm,
+  },
+  sheetNumber: {
+    fontSize: 56,
+    fontWeight: '700',
+    color: Colors.secondary,
+  },
+  sheetUnit: {
+    ...Typography.bodyLarge,
+    color: Colors.textMuted,
+  },
+  sheetActions: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+    alignSelf: 'stretch',
+    justifyContent: 'space-between',
   },
   bottomPad: {
     height: Spacing.xxxl,

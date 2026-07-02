@@ -1,4 +1,5 @@
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { router } from 'expo-router';
 
 import Card from '@/components/Card';
 import { Screen } from '@/components/Screen';
@@ -45,6 +46,15 @@ export default function SettingsTab() {
         <View style={styles.userInfo}>
           <Text style={styles.userEmail}>{userEmail}</Text>
           <Text style={styles.userRole}>Operador</Text>
+        </View>
+      </Card>
+
+      {/* Datos */}
+      <Card style={styles.dataCard} onPress={() => router.push('/(tabs)/import-erp')}>
+        <Text style={styles.dataEmoji}>⬆️</Text>
+        <View style={styles.userInfo}>
+          <Text style={styles.userEmail}>Importar ventas del ERP</Text>
+          <Text style={styles.userRole}>Carga las exportaciones CSV para alimentar la analítica y las predicciones</Text>
         </View>
       </Card>
 
@@ -115,6 +125,15 @@ const styles = StyleSheet.create({
   userRole: {
     ...Typography.bodySmall,
     color: Colors.textMuted,
+  },
+  dataCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.lg,
+    marginBottom: Spacing.lg,
+  },
+  dataEmoji: {
+    fontSize: 28,
   },
   infoCard: {
     gap: 0,

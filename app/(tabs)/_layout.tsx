@@ -1,10 +1,12 @@
 import { Tabs } from 'expo-router';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 
 import { Colors, Typography } from '@/constants/theme';
 
 const TAB_ICONS: Record<string, string> = {
   index: '🏠',
+  'stock/index': '📦',
+  'production/index': '🥖',
   'dashboard/index': '📊',
   'planning/index': '📋',
   'settings/index': '⚙️',
@@ -27,6 +29,8 @@ export default function TabsLayout() {
       })}
     >
       <Tabs.Screen name="index" options={{ title: 'Inicio' }} />
+      <Tabs.Screen name="stock/index" options={{ title: 'Stock' }} />
+      <Tabs.Screen name="production/index" options={{ title: 'Producción' }} />
       <Tabs.Screen name="dashboard/index" options={{ title: 'Analítica' }} />
       <Tabs.Screen name="planning/index" options={{ title: 'Planificación' }} />
       <Tabs.Screen name="settings/index" options={{ title: 'Ajustes' }} />
@@ -34,8 +38,9 @@ export default function TabsLayout() {
       {/* Hide location routes from tab bar — accessed via navigation */}
       <Tabs.Screen name="location/[locationId]" options={{ href: null }} />
 
-      {/* Hide legacy close route */}
+      {/* Hidden utility routes */}
       <Tabs.Screen name="close/index" options={{ href: null }} />
+      <Tabs.Screen name="import-erp" options={{ href: null }} />
     </Tabs>
   );
 }
