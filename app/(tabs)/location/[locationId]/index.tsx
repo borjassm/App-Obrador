@@ -15,7 +15,7 @@ import { supabase } from '@/lib/supabase';
 export default function LocationDashboard() {
   const { locationId } = useLocalSearchParams<{ locationId: string }>();
   const [locationName, setLocationName] = useState('');
-  const { status, entryCount, totalProducts, loading, refresh } = useLocationStatus(locationId);
+  const { status, entryCount, totalProducts, loading: _loading, refresh } = useLocationStatus(locationId);
 
   useEffect(() => {
     if (!locationId) return;

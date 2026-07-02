@@ -1,4 +1,4 @@
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text } from 'react-native';
 
 import { Colors, Radius, Spacing, TOUCH_TARGET_MIN, Typography } from '@/constants/theme';
 
