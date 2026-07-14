@@ -31,16 +31,16 @@ export function useStock() {
   }, [refresh]);
 
   const recordIngredientCount = useCallback(
-    async (ingredientId: string, quantity: number) => {
-      await stockService.recordIngredientCount(ingredientId, quantity);
+    async (ingredientId: string, quantity: number, dateISO?: string) => {
+      await stockService.recordIngredientCount(ingredientId, quantity, undefined, dateISO);
       await refresh();
     },
     [refresh]
   );
 
   const recordProductCount = useCallback(
-    async (productId: string, quantity: number) => {
-      await stockService.recordProductCount(productId, quantity);
+    async (productId: string, quantity: number, dateISO?: string) => {
+      await stockService.recordProductCount(productId, quantity, undefined, dateISO);
       await refresh();
     },
     [refresh]

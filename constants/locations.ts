@@ -12,18 +12,25 @@ export interface LocationDisplay {
 
 export const LOCATION_DISPLAY: Record<string, LocationDisplay> = {
   'LOS URQUIZA 17': {
-    shortName: 'Nave',
+    shortName: 'La Nave',
     icon: 'factory',
     color: Colors.secondary,
     tint: Colors.secondaryTint,
-    description: 'Produccion',
+    description: 'Producción + Punto de venta · Los Urquiza 17',
   },
   'SANTA FELICIANA 10': {
-    shortName: 'Tienda',
+    shortName: 'La Tienda',
     icon: 'storefront',
     color: Colors.primary,
     tint: Colors.primaryTint,
-    description: 'Tienda + Cierre',
+    description: 'Punto de venta · junto a Plaza de Olavide',
+  },
+  'NUEVA TIENDA': {
+    shortName: 'Nueva tienda',
+    icon: 'storefront',
+    color: Colors.primary,
+    tint: Colors.primaryTint,
+    description: 'Próximamente · nombre por confirmar',
   },
 };
 

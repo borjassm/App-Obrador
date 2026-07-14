@@ -50,11 +50,9 @@ export default function LocationCard({
   const chip = STATUS_CHIP[status];
   const isClosed = status === 'closed';
 
-  const subtitle = display.description
-    ? display.description.toLowerCase().startsWith(display.shortName.toLowerCase())
-      ? display.description
-      : `${display.shortName} · ${display.description}`
-    : display.shortName;
+  // Título = nombre corto ("La Nave"); subtítulo = descripción del sitio
+  const title = display.shortName;
+  const subtitle = display.description || formatLocationName(locationName);
 
   return (
     <Pressable onPress={onPress} style={({ pressed }) => (pressed ? styles.pressed : null)}>
@@ -72,7 +70,7 @@ export default function LocationCard({
             </View>
             <View style={styles.nameBlock}>
               <Text style={[styles.name, tablet && styles.nameTablet]} numberOfLines={1}>
-                {formatLocationName(locationName)}
+                {title}
               </Text>
               <Text style={styles.subtitle} numberOfLines={1}>
                 {subtitle}

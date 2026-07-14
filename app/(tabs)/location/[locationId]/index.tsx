@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 
 import Badge from '@/components/Badge';
@@ -57,6 +57,9 @@ export default function LocationDashboard() {
 
   return (
     <Screen scrollable>
+      {/* Título de la pantalla: cierre del día (la acción sigue siendo registrar sobrantes) */}
+      <Stack.Screen options={{ title: 'Cierre del día' }} />
+
       {/* Location header */}
       <View style={styles.hero}>
         <View style={[styles.heroTile, { backgroundColor: display.tint }]}>
@@ -78,7 +81,6 @@ export default function LocationDashboard() {
 
         {status !== 'none' && totalProducts > 0 && (
           <View style={styles.progressRow}>
-            <Text style={styles.progressLabel}>Sobrantes registrados</Text>
             <ProgressPill current={entryCount} total={totalProducts} />
           </View>
         )}
@@ -149,9 +151,6 @@ const styles = StyleSheet.create({
   },
   progressRow: {
     gap: Spacing.sm,
-  },
-  progressLabel: {
-    ...Typography.meta,
   },
   actionArea: {
     marginTop: Spacing.xl,

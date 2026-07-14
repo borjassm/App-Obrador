@@ -13,11 +13,13 @@ export interface ProductGroup {
 }
 
 export const productService = {
+  // Solo productos de obrador: son los únicos con sobrantes/producción
   async list() {
     return supabase
       .from('products')
       .select('id,name,family,sale_price,display_order')
       .eq('is_active', true)
+      .eq('is_obrador', true)
       .order('display_order', { ascending: true, nullsFirst: false })
       .order('name');
   },

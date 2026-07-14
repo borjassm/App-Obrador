@@ -49,11 +49,12 @@ export function useLocationStatus(locationId: string | undefined) {
       entryCount = count ?? 0;
     }
 
-    // Total active products
+    // Total de productos de obrador (los que se registran en sobrantes)
     const { count: totalProducts } = await supabase
       .from('products')
       .select('id', { count: 'exact', head: true })
-      .eq('is_active', true);
+      .eq('is_active', true)
+      .eq('is_obrador', true);
 
     setInfo({
       sessionId: session?.id ?? null,

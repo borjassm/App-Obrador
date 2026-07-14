@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  LayoutAnimation,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  UIManager,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -30,6 +33,11 @@ import {
 import { getLocationDisplay } from '@/constants/locations';
 import { supabase } from '@/lib/supabase';
 import { useProductEntries } from '@/hooks/useProductEntries';
+
+// Animación de expandir/colapsar en Android (LayoutAnimation es experimental ahí)
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 type ChipState = 'idle' | 'saving' | 'saved';
 
@@ -112,13 +120,47 @@ export default function SobrantesScreen() {
     return !!e && (e.savedQty > 0 || e.discardedQty > 0);
   };
 
+  // Acordeón de familias: todas colapsadas por defecto
+  const [expandedFamilies, setExpandedFamilies] = useState<Set<string>>(new Set());
+
+  const animateAccordion = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.create(220, 'easeInEaseOut', 'opacity'));
+  };
+
+  const toggleFamily = (family: string) => {
+    animateAccordion();
+    setExpandedFamilies((prev) => {
+      const next = new Set(prev);
+      if (next.has(family)) {
+        next.delete(family);
+      } else {
+        next.add(family);
+      }
+      return next;
+    });
+  };
+
+  // La familia del producto seleccionado se auto-expande (tablet master-detail)
+  useEffect(() => {
+    if (!selectedProductId) return;
+    const product = flatProducts.find((p) => p.id === selectedProductId);
+    if (!product) return;
+    setExpandedFamilies((prev) => {
+      if (prev.has(product.family)) return prev;
+      animateAccordion();
+      const next = new Set(prev);
+      next.add(product.family);
+      return next;
+    });
+  }, [selectedProductId, flatProducts]);
+
   // Selección inicial en tablet: primer producto pendiente (o el primero)
   useEffect(() => {
-    if (loading || selectedProductId || flatProducts.length === 0) return;
+    if (!isTablet || loading || selectedProductId || flatProducts.length === 0) return;
     const firstPending = flatProducts.find((p) => !isFilled(p.id));
     setSelectedProductId((firstPending ?? flatProducts[0]).id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, flatProducts]);
+  }, [isTablet, loading, flatProducts]);
 
   // Chip de autoguardado: Guardando… → Guardado (1.5s) → Guardado automático
   const [chipState, setChipState] = useState<ChipState>('idle');
@@ -194,6 +236,39 @@ export default function SobrantesScreen() {
     />
   );
 
+  // Cabecera de familia del acordeón (compartida móvil / tablet)
+  const renderFamilyHeader = (group: (typeof groups)[number]) => {
+    const expanded = expandedFamilies.has(group.family);
+    const registered = group.products.filter((p) => isFilled(p.id)).length;
+    const total = group.products.length;
+    const complete = total > 0 && registered === total;
+    return (
+      <Pressable
+        onPress={() => toggleFamily(group.family)}
+        style={({ pressed }) => [styles.familyHeader, pressed && styles.familyHeaderPressed]}
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        accessibilityLabel={`${group.family}, registrados ${registered} de ${total}`}
+      >
+        <View style={[styles.familyBar, { backgroundColor: getFamilyColor(group.family) }]} />
+        <Text style={styles.familyName} numberOfLines={1}>
+          {group.family}
+        </Text>
+        <View style={styles.familyStatus}>
+          {complete && <MaterialIcons name="check-circle" size={16} color={Colors.success} />}
+          <Text style={[styles.familyStatusText, complete && styles.familyStatusDone]}>
+            registrados {registered}/{total}
+          </Text>
+        </View>
+        <MaterialIcons
+          name={expanded ? 'expand-less' : 'expand-more'}
+          size={24}
+          color={Colors.textSecondary}
+        />
+      </Pressable>
+    );
+  };
+
   if (loading) {
     return (
       <Screen>
@@ -212,34 +287,32 @@ export default function SobrantesScreen() {
         <View style={styles.progressHeader}>
           <ProgressPill current={filledCount} total={totalCount} />
           {!isClosed && (
-            <Text style={styles.hint}>Toca cada producto para registrar sobrantes</Text>
+            <Text style={styles.hint}>Toca una familia para ver y registrar sus productos</Text>
           )}
         </View>
 
         {groups.map((group) => (
           <View key={group.family} style={styles.group}>
-            <View style={styles.sectionRow}>
-              <View style={[styles.sectionDot, { backgroundColor: getFamilyColor(group.family) }]} />
-              <Text style={styles.sectionLabel}>{group.family}</Text>
-              <Text style={styles.sectionCount}>{group.products.length}</Text>
-            </View>
-            <View style={styles.productList}>
-              {group.products.map((product) => {
-                const entry = entries.get(product.id);
-                return (
-                  <ProductCard
-                    key={product.id}
-                    name={product.name}
-                    family={product.family}
-                    savedQty={entry?.savedQty}
-                    discardedQty={entry?.discardedQty}
-                    onPress={() =>
-                      router.push(`/(tabs)/location/${locationId}/product/${product.id}`)
-                    }
-                  />
-                );
-              })}
-            </View>
+            {renderFamilyHeader(group)}
+            {expandedFamilies.has(group.family) && (
+              <View style={styles.productList}>
+                {group.products.map((product) => {
+                  const entry = entries.get(product.id);
+                  return (
+                    <ProductCard
+                      key={product.id}
+                      name={product.name}
+                      family={product.family}
+                      savedQty={entry?.savedQty}
+                      discardedQty={entry?.discardedQty}
+                      onPress={() =>
+                        router.push(`/(tabs)/location/${locationId}/product/${product.id}`)
+                      }
+                    />
+                  );
+                })}
+              </View>
+            )}
           </View>
         ))}
 
@@ -296,27 +369,25 @@ export default function SobrantesScreen() {
           >
             {groups.map((group) => (
               <View key={group.family} style={styles.group}>
-                <View style={styles.sectionRow}>
-                  <View style={[styles.sectionDot, { backgroundColor: getFamilyColor(group.family) }]} />
-                  <Text style={styles.sectionLabel}>{group.family}</Text>
-                  <Text style={styles.sectionCount}>{group.products.length}</Text>
-                </View>
-                <View style={styles.productList}>
-                  {group.products.map((product) => {
-                    const entry = entries.get(product.id);
-                    return (
-                      <ProductCard
-                        key={product.id}
-                        name={product.name}
-                        family={product.family}
-                        savedQty={entry?.savedQty}
-                        discardedQty={entry?.discardedQty}
-                        selected={product.id === selectedProductId}
-                        onPress={() => setSelectedProductId(product.id)}
-                      />
-                    );
-                  })}
-                </View>
+                {renderFamilyHeader(group)}
+                {expandedFamilies.has(group.family) && (
+                  <View style={styles.productList}>
+                    {group.products.map((product) => {
+                      const entry = entries.get(product.id);
+                      return (
+                        <ProductCard
+                          key={product.id}
+                          name={product.name}
+                          family={product.family}
+                          savedQty={entry?.savedQty}
+                          discardedQty={entry?.discardedQty}
+                          selected={product.id === selectedProductId}
+                          onPress={() => setSelectedProductId(product.id)}
+                        />
+                      );
+                    })}
+                  </View>
+                )}
               </View>
             ))}
           </ScrollView>
@@ -434,28 +505,50 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
   },
   group: {
-    marginBottom: Spacing.xl,
+    marginBottom: Spacing.md,
   },
-  sectionRow: {
+  familyHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.sm,
-    marginBottom: Spacing.sm,
+    gap: Spacing.md,
+    minHeight: 56,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    backgroundColor: Colors.bgCard,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
   },
-  sectionDot: {
-    width: 10,
-    height: 10,
+  familyHeaderPressed: {
+    opacity: 0.85,
+  },
+  familyBar: {
+    width: 8,
+    height: 28,
     borderRadius: Radius.full,
   },
-  sectionLabel: {
-    ...Typography.sectionLabel,
+  familyName: {
+    ...Typography.headingSmall,
+    color: Colors.textPrimary,
+    textTransform: 'capitalize',
     flex: 1,
   },
-  sectionCount: {
+  familyStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  familyStatusText: {
     ...Typography.meta,
+    fontVariant: ['tabular-nums'],
+  },
+  familyStatusDone: {
+    color: Colors.success,
+    fontFamily: Fonts.bold,
   },
   productList: {
     gap: Spacing.sm,
+    paddingTop: Spacing.sm,
   },
   mobileFooter: {
     paddingTop: Spacing.xl,

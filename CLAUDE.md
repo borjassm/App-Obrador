@@ -26,8 +26,17 @@ Objetivo: venderla al obrador. GitHub: `borjassm/App-Obrador` (rama de trabajo:
   **NUNCA reimportar a ciegas** (riesgo de duplicados); el importador de la app es
   idempotente por `(location_id, sale_date, product_id, source)`.
 - El esquema del repo se mantiene con migraciones en `supabase/migrations/`
-  (0001–0004). La 0004 contiene el motor analítico (funciones RPC `analytics_*`
+  (0001–0007). La 0004 contiene el motor analítico (funciones RPC `analytics_*`
   y `planning_*`). Cambios de BD SIEMPRE vía migración versionada + archivo en repo.
+- **Concepto clave — `products.is_obrador`** (desde 0005): true = se hornea en la
+  nave (~170: panaderia/bolleria/dulce/salado/focaccia/navidad); false = artículo
+  de venta del ERP (cafés, bebidas, extras, descuentos TPV). Sobrantes, producción,
+  plan y stock de producto filtran SIEMPRE por este flag. Los productos nuevos del
+  import ERP nacen con false.
+- **Ubicaciones**: solo 2 reales — "LOS URQUIZA 17" (La Nave: producción + punto de
+  venta) y "SANTA FELICIANA 10" (La Tienda, junto a Plaza de Olavide). "NUEVA TIENDA"
+  es un 3er punto de venta previsto (nombre por confirmar). "Deolavide - Tienda" y
+  "Nave - Punto venta" están desactivadas (duplicados antiguos); `locations.is_active`.
 
 ## Entorno de desarrollo (Windows)
 - Node portable en `C:\Users\Borja Saenz\nodejs\node-v24.18.0-win-x64` (está en el

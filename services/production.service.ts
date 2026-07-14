@@ -16,6 +16,7 @@ export const productionService = {
         .from('products')
         .select('id,name,family,display_order')
         .eq('is_active', true)
+        .eq('is_obrador', true)
         .order('display_order', { ascending: true, nullsFirst: false })
         .order('name'),
       supabase

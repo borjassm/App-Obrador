@@ -46,12 +46,12 @@ export const stockService = {
       }));
   },
 
-  // Registrar recuento de un ingrediente (foto de stock de hoy)
-  async recordIngredientCount(ingredientId: string, quantity: number, notes?: string) {
+  // Registrar recuento de un ingrediente (por defecto hoy; admite corregir otro día)
+  async recordIngredientCount(ingredientId: string, quantity: number, notes?: string, dateISO?: string) {
     return supabase
       .from('inventory_entries')
       .upsert(
-        { ingredient_id: ingredientId, entry_date: todayISO(), quantity, notes: notes ?? null },
+        { ingredient_id: ingredientId, entry_date: dateISO ?? todayISO(), quantity, notes: notes ?? null },
         { onConflict: 'ingredient_id,entry_date' }
       )
       .select('id, ingredient_id, quantity, entry_date')
@@ -76,12 +76,12 @@ export const stockService = {
       }));
   },
 
-  // Registrar recuento manual de producto terminado (foto de stock de hoy)
-  async recordProductCount(productId: string, quantity: number, notes?: string) {
+  // Registrar recuento manual de producto terminado (por defecto hoy; admite corregir otro día)
+  async recordProductCount(productId: string, quantity: number, notes?: string, dateISO?: string) {
     return supabase
       .from('product_stock_counts')
       .upsert(
-        { product_id: productId, count_date: todayISO(), quantity, notes: notes ?? null },
+        { product_id: productId, count_date: dateISO ?? todayISO(), quantity, notes: notes ?? null },
         { onConflict: 'product_id,count_date' }
       )
       .select('id, product_id, quantity, count_date')
