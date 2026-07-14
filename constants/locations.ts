@@ -1,21 +1,28 @@
+import { Colors } from '@/constants/theme';
+
 export interface LocationDisplay {
   shortName: string;
-  emoji: string;
+  /** Nombre de icono de MaterialIcons (@expo/vector-icons) */
+  icon: 'factory' | 'storefront' | 'place';
   color: string;
+  /** Fondo suave para el icon-tile */
+  tint: string;
   description: string;
 }
 
 export const LOCATION_DISPLAY: Record<string, LocationDisplay> = {
   'LOS URQUIZA 17': {
     shortName: 'Nave',
-    emoji: '🏭',
-    color: '#8B5E3C',
+    icon: 'factory',
+    color: Colors.secondary,
+    tint: Colors.secondaryTint,
     description: 'Produccion',
   },
   'SANTA FELICIANA 10': {
     shortName: 'Tienda',
-    emoji: '🏪',
-    color: '#2A9D8F',
+    icon: 'storefront',
+    color: Colors.primary,
+    tint: Colors.primaryTint,
     description: 'Tienda + Cierre',
   },
 };
@@ -23,8 +30,9 @@ export const LOCATION_DISPLAY: Record<string, LocationDisplay> = {
 export function getLocationDisplay(name: string): LocationDisplay {
   return LOCATION_DISPLAY[name] ?? {
     shortName: name,
-    emoji: '📍',
-    color: '#8B5E3C',
+    icon: 'place',
+    color: Colors.primary,
+    tint: Colors.primaryTint,
     description: '',
   };
 }

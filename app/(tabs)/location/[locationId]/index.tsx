@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { MaterialIcons } from '@expo/vector-icons';
 
 import Badge from '@/components/Badge';
 import Button from '@/components/Button';
 import Card from '@/components/Card';
 import ProgressPill from '@/components/ProgressPill';
 import { Screen } from '@/components/Screen';
-import { Colors, Spacing, Typography } from '@/constants/theme';
+import { Colors, Radius, Spacing, Typography } from '@/constants/theme';
 import { getLocationDisplay } from '@/constants/locations';
 import { useLocationStatus } from '@/hooks/useLocationStatus';
 import { supabase } from '@/lib/supabase';
@@ -45,7 +46,7 @@ export default function LocationDashboard() {
   });
 
   const statusLabel =
-    status === 'closed' ? 'Registrado ✓' :
+    status === 'closed' ? 'Registrado' :
     status === 'open' ? 'En curso' :
     'Pendiente';
 
@@ -58,8 +59,13 @@ export default function LocationDashboard() {
     <Screen scrollable>
       {/* Location header */}
       <View style={styles.hero}>
-        <Text style={styles.heroEmoji}>{display.emoji}</Text>
+        <View style={[styles.heroTile, { backgroundColor: display.tint }]}>
+          <MaterialIcons name={display.icon} size={28} color={display.color} />
+        </View>
         <Text style={styles.heroTitle}>{display.shortName}</Text>
+        {!!display.description && (
+          <Text style={styles.heroDescription}>{display.description}</Text>
+        )}
         <Text style={styles.heroDate}>{dateStr}</Text>
       </View>
 
@@ -72,7 +78,7 @@ export default function LocationDashboard() {
 
         {status !== 'none' && totalProducts > 0 && (
           <View style={styles.progressRow}>
-            <Text style={styles.progressLabel}>Productos registrados</Text>
+            <Text style={styles.progressLabel}>Sobrantes registrados</Text>
             <ProgressPill current={entryCount} total={totalProducts} />
           </View>
         )}
@@ -82,11 +88,11 @@ export default function LocationDashboard() {
       <View style={styles.actionArea}>
         {status === 'closed' ? (
           <View style={styles.closedBox}>
-            <Text style={styles.closedEmoji}>✅</Text>
+            <MaterialIcons name="check-circle" size={48} color={Colors.success} />
             <Text style={styles.closedText}>Los sobrantes de hoy ya están registrados</Text>
             <Button
-              title="Ver resumen"
-              variant="secondary"
+              title="Ver resumen del día"
+              variant="ghost"
               onPress={() => router.push(`/(tabs)/location/${locationId}/close`)}
             />
           </View>
@@ -107,13 +113,20 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.xxl,
     gap: Spacing.xs,
   },
-  heroEmoji: {
-    fontSize: 56,
+  heroTile: {
+    width: 52,
+    height: 52,
+    borderRadius: Radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: Spacing.sm,
   },
   heroTitle: {
     ...Typography.displayMedium,
     color: Colors.textPrimary,
+  },
+  heroDescription: {
+    ...Typography.meta,
   },
   heroDate: {
     ...Typography.bodyMedium,
@@ -122,6 +135,8 @@ const styles = StyleSheet.create({
   },
   statusCard: {
     gap: Spacing.lg,
+    padding: Spacing.xl,
+    borderRadius: Radius.xl,
   },
   statusRow: {
     flexDirection: 'row',
@@ -136,8 +151,7 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   progressLabel: {
-    ...Typography.bodySmall,
-    color: Colors.textMuted,
+    ...Typography.meta,
   },
   actionArea: {
     marginTop: Spacing.xl,
@@ -146,9 +160,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.lg,
     paddingVertical: Spacing.xl,
-  },
-  closedEmoji: {
-    fontSize: 48,
   },
   closedText: {
     ...Typography.bodyLarge,

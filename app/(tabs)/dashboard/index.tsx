@@ -1,12 +1,20 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 
 import Card from '@/components/Card';
 import FilterPills from '@/components/FilterPills';
 import KPICard from '@/components/KPICard';
 import MiniBarChart, { type BarPoint } from '@/components/MiniBarChart';
-import SectionHeader from '@/components/SectionHeader';
 import { Screen } from '@/components/Screen';
-import { Colors, Radius, Spacing, Typography, getFamilyColor } from '@/constants/theme';
+import {
+  Colors,
+  Fonts,
+  Radius,
+  Spacing,
+  TABLET_BREAKPOINT,
+  Typography,
+  getFamilyColor,
+} from '@/constants/theme';
 import { useAnalytics, type Period } from '@/hooks/useAnalytics';
 
 const PERIOD_OPTIONS: { key: Period; label: string }[] = [
@@ -18,6 +26,16 @@ const PERIOD_OPTIONS: { key: Period; label: string }[] = [
 
 const WEEKDAY_LABELS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
+type IconName = keyof typeof MaterialIcons.glyphMap;
+
+interface Insight {
+  icon: IconName;
+  tileBg: string;
+  iconColor: string;
+  title: string;
+  detail: string;
+}
+
 function euros(n: number): string {
   return n.toLocaleString('es-ES', { maximumFractionDigits: 0 }) + ' €';
 }
@@ -25,6 +43,20 @@ function euros(n: number): string {
 function deltaPct(current: number, previous: number): number | null {
   if (!previous) return null;
   return Math.round(((current - previous) / previous) * 100);
+}
+
+/** Marca la barra pico (máximo → espresso) y las destacadas (>= 75% del máximo → arena). */
+function markEmphasis(points: BarPoint[]): BarPoint[] {
+  const max = Math.max(...points.map((p) => p.value), 0);
+  if (max <= 0) return points;
+  let peakSet = false;
+  return points.map((p) => {
+    if (!peakSet && p.value === max) {
+      peakSet = true;
+      return { ...p, peak: true };
+    }
+    return { ...p, highlight: p.value >= max * 0.75 };
+  });
 }
 
 /** Agrupa la serie diaria en ~30 barras máximo (por semanas si hace falta). */
@@ -48,6 +80,8 @@ function downsample(series: { sale_date: string; revenue: number }[]): BarPoint[
 }
 
 export default function DashboardTab() {
+  const { width } = useWindowDimensions();
+  const isTablet = width >= TABLET_BREAKPOINT;
   const { period, setPeriod, data, loading } = useAnalytics();
 
   if (loading) {
@@ -64,7 +98,7 @@ export default function DashboardTab() {
     return (
       <Screen>
         <View style={styles.loadingBox}>
-          <Text style={styles.emptyEmoji}>📭</Text>
+          <MaterialIcons name="inbox" size={48} color={Colors.textMuted} />
           <Text style={styles.loadingText}>Aún no hay ventas cargadas.</Text>
           <Text style={styles.emptyHint}>Importa las ventas del ERP desde Ajustes.</Text>
         </View>
@@ -84,12 +118,14 @@ export default function DashboardTab() {
   const bestDay = wd.length ? wd.reduce((a, b) => (b.avg_revenue > a.avg_revenue ? b : a)) : null;
   const avgAllDays = wd.length ? wd.reduce((s, d) => s + d.avg_revenue, 0) / wd.length : 0;
 
-  // 💡 Potenciales de mejora (calculados sobre los datos del periodo)
-  const insights: { emoji: string; title: string; detail: string }[] = [];
+  // Potenciales de mejora (calculados sobre los datos del periodo)
+  const insights: Insight[] = [];
   if (data.waste[0]?.waste_cost > 0) {
     const w = data.waste[0];
     insights.push({
-      emoji: '🗑️',
+      icon: 'delete',
+      tileBg: Colors.dangerLight,
+      iconColor: Colors.danger,
       title: `Reducir la merma de ${w.name}`,
       detail: `Se tiraron ${Math.round(w.discarded)} uds (~${euros(w.waste_cost)} en coste, ${euros(w.lost_revenue)} en venta perdida). Es tu mayor fuga.`,
     });
@@ -97,7 +133,9 @@ export default function DashboardTab() {
   if (data.profit[0]) {
     const p = data.profit[0];
     insights.push({
-      emoji: '⭐',
+      icon: 'star',
+      tileBg: Colors.successLight,
+      iconColor: Colors.success,
       title: `Potencia ${p.name}`,
       detail: `Es tu producto más rentable: ${euros(p.est_margin)} de margen (${p.margin_pct}%) con ${Math.round(p.units)} uds. Dale visibilidad y no lo dejes agotarse.`,
     });
@@ -105,7 +143,9 @@ export default function DashboardTab() {
   const lowMargin = [...data.profit].filter((p) => p.units > 50).sort((a, b) => a.margin_pct - b.margin_pct)[0];
   if (lowMargin && lowMargin.margin_pct < 60) {
     insights.push({
-      emoji: '🔍',
+      icon: 'search',
+      tileBg: Colors.warningLight,
+      iconColor: Colors.warning,
       title: `Revisa el precio de ${lowMargin.name}`,
       detail: `Vende bien (${Math.round(lowMargin.units)} uds) pero su margen es de los más bajos (${lowMargin.margin_pct}%). Una pequeña subida o un ajuste de coste tendría impacto directo.`,
     });
@@ -114,168 +154,196 @@ export default function DashboardTab() {
     const pct = Math.round(((bestDay.avg_revenue - avgAllDays) / avgAllDays) * 100);
     if (pct > 10) {
       insights.push({
-        emoji: '📅',
+        icon: 'calendar-month',
+        tileBg: Colors.secondaryTint,
+        iconColor: Colors.secondary,
         title: `El ${WEEKDAY_LABELS[bestDay.weekday].toLowerCase()} es tu mejor día`,
         detail: `Factura de media ${euros(bestDay.avg_revenue)} (+${pct}% sobre la media). Asegura producción y personal ese día.`,
       });
     }
   }
 
+  const headerText = (
+    <View style={styles.headerText}>
+      <Text style={styles.title}>Analítica</Text>
+      <Text style={styles.subtitle}>
+        Ventas hasta {data.anchorSale.split('-').reverse().join('/')}
+        {data.anchorSession ? ` · sobrantes hasta ${data.anchorSession.split('-').reverse().join('/')}` : ''}
+      </Text>
+    </View>
+  );
+
+  const kpiCards = [
+    <KPICard
+      key="rev"
+      label="Ingresos"
+      value={euros(overview.total_revenue)}
+      trend={revDelta != null ? { direction: revDelta >= 0 ? 'up' : 'down', label: `${revDelta >= 0 ? '+' : ''}${revDelta}% vs anterior` } : undefined}
+    />,
+    <KPICard
+      key="units"
+      label="Unidades"
+      value={Math.round(overview.total_units).toLocaleString('es-ES')}
+      trend={unitsDelta != null ? { direction: unitsDelta >= 0 ? 'up' : 'down', label: `${unitsDelta >= 0 ? '+' : ''}${unitsDelta}%` } : undefined}
+    />,
+    <KPICard key="margin" label="Margen est." value={euros(totalMargin)} unit="top 10" color={Colors.success} />,
+    <KPICard key="waste" label="Merma" value={euros(totalWasteCost)} unit="en coste" color={totalWasteCost > 0 ? Colors.danger : Colors.textMuted} />,
+  ];
+
+  const revenueChart = (
+    <Card style={[styles.panelCard, isTablet && styles.panelLeft]} shadow="sm">
+      <Text style={styles.cardTitle}>Ingresos por día</Text>
+      <MiniBarChart points={markEmphasis(downsample(data.series))} height={isTablet ? 180 : 130} />
+      <Text style={styles.chartCaption}>
+        Media diaria: {euros(overview.avg_daily_revenue)} · {overview.days_with_sales} días con ventas
+      </Text>
+    </Card>
+  );
+
+  const insightsCard = (
+    <Card style={[styles.panelCard, isTablet && styles.panelRight]} shadow="sm">
+      <Text style={styles.cardTitle}>Potenciales de mejora</Text>
+      {insights.length === 0 ? (
+        <Text style={styles.insightEmpty}>Sin recomendaciones para este periodo.</Text>
+      ) : (
+        insights.map((ins, i) => (
+          <View key={i} style={[styles.insightRow, i > 0 && styles.insightRowBorder]}>
+            <View style={[styles.insightTile, { backgroundColor: ins.tileBg }]}>
+              <MaterialIcons name={ins.icon} size={19} color={ins.iconColor} />
+            </View>
+            <View style={styles.insightBody}>
+              <Text style={styles.insightTitle}>{ins.title}</Text>
+              <Text style={styles.insightDetail}>{ins.detail}</Text>
+            </View>
+          </View>
+        ))
+      )}
+    </Card>
+  );
+
   return (
     <Screen scrollable noPadding>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>📊 Analítica</Text>
-        <Text style={styles.subtitle}>
-          Ventas hasta {data.anchorSale.split('-').reverse().join('/')}
-          {data.anchorSession ? ` · sobrantes hasta ${data.anchorSession.split('-').reverse().join('/')}` : ''}
-        </Text>
-      </View>
-
-      <FilterPills options={PERIOD_OPTIONS} selected={period} onSelect={(k) => setPeriod(k as Period)} />
-
-      {/* KPIs */}
-      <View style={styles.kpiGrid}>
-        <KPICard
-          label="Ingresos"
-          value={euros(overview.total_revenue)}
-          color={Colors.primary}
-          trend={revDelta != null ? { direction: revDelta >= 0 ? 'up' : 'down', label: `${revDelta >= 0 ? '+' : ''}${revDelta}% vs anterior` } : undefined}
-        />
-        <KPICard
-          label="Unidades"
-          value={Math.round(overview.total_units).toLocaleString('es-ES')}
-          color={Colors.secondary}
-          trend={unitsDelta != null ? { direction: unitsDelta >= 0 ? 'up' : 'down', label: `${unitsDelta >= 0 ? '+' : ''}${unitsDelta}%` } : undefined}
-        />
-      </View>
-      <View style={styles.kpiGrid}>
-        <KPICard label="Margen est." value={euros(totalMargin)} unit="top 10" color={Colors.success} />
-        <KPICard label="Merma" value={euros(totalWasteCost)} unit="en coste" color={totalWasteCost > 0 ? Colors.danger : Colors.textMuted} />
-      </View>
-
-      {/* Tendencia de ingresos */}
-      <View style={styles.section}>
-        <View style={styles.sectionPad}>
-          <SectionHeader title="Ingresos por día" family="panaderia" />
+      {/* Header: título + subtítulo fechas + segmented de periodos */}
+      {isTablet ? (
+        <View style={styles.headerRow}>
+          {headerText}
+          <FilterPills options={PERIOD_OPTIONS} selected={period} onSelect={(k) => setPeriod(k as Period)} />
         </View>
-        <Card style={styles.chartCard} shadow="sm">
-          <MiniBarChart points={downsample(data.series)} height={130} />
-          <Text style={styles.chartCaption}>
-            Media diaria: {euros(overview.avg_daily_revenue)} · {overview.days_with_sales} días con ventas
-          </Text>
-        </Card>
-      </View>
-
-      {/* 💡 Potenciales de mejora */}
-      {insights.length > 0 && (
-        <View style={styles.section}>
-          <View style={styles.sectionPad}>
-            <SectionHeader title="💡 Potenciales de mejora" family="laminado" />
-          </View>
-          <View style={styles.insightList}>
-            {insights.map((ins, i) => (
-              <Card key={i} style={styles.insightCard} shadow="sm">
-                <Text style={styles.insightEmoji}>{ins.emoji}</Text>
-                <View style={styles.insightBody}>
-                  <Text style={styles.insightTitle}>{ins.title}</Text>
-                  <Text style={styles.insightDetail}>{ins.detail}</Text>
-                </View>
-              </Card>
-            ))}
-          </View>
-        </View>
+      ) : (
+        <>
+          <View style={styles.header}>{headerText}</View>
+          <FilterPills options={PERIOD_OPTIONS} selected={period} onSelect={(k) => setPeriod(k as Period)} />
+        </>
       )}
 
-      {/* Top productos */}
-      <View style={styles.section}>
-        <View style={styles.sectionPad}>
-          <SectionHeader title="Top productos por ingresos" family="panaderia" />
-        </View>
+      {/* KPIs: fila de 4 en tablet, 2×2 en móvil */}
+      {isTablet ? (
+        <View style={styles.kpiGrid}>{kpiCards}</View>
+      ) : (
+        <>
+          <View style={styles.kpiGrid}>{kpiCards.slice(0, 2)}</View>
+          <View style={styles.kpiGrid}>{kpiCards.slice(2)}</View>
+        </>
+      )}
+
+      {/* Grid 3fr/2fr: ingresos por día + potenciales de mejora */}
+      <View style={[styles.panelGrid, isTablet && styles.panelGridRow]}>
+        {revenueChart}
+        {insightsCard}
+      </View>
+
+      {/* Top productos por ingresos */}
+      <Card style={styles.sectionCard} shadow="sm">
+        <Text style={styles.cardTitle}>Top productos por ingresos</Text>
         {data.top.map((p, i) => (
-          <View key={p.product_id} style={styles.rankRow}>
+          <View key={p.product_id} style={[styles.topRow, i > 0 && styles.topRowBorder]}>
             <Text style={styles.rankNum}>{i + 1}</Text>
-            <View style={styles.rankInfo}>
-              <Text style={styles.rankName} numberOfLines={1}>{p.name}</Text>
-              <View style={styles.shareTrack}>
-                <View style={[styles.shareFill, { width: `${Math.min(100, p.revenue_share * 4)}%`, backgroundColor: getFamilyColor(p.family) }]} />
-              </View>
-            </View>
-            <View style={styles.rankStats}>
-              <Text style={styles.rankRevenue}>{euros(p.revenue)}</Text>
-              <Text style={styles.rankUnits}>{Math.round(p.units).toLocaleString('es-ES')} uds · {p.revenue_share}%</Text>
-            </View>
+            {isTablet ? (
+              <>
+                <Text style={styles.topName} numberOfLines={1}>{p.name}</Text>
+                <View style={styles.shareTrackFlex}>
+                  <View style={[styles.shareFill, { width: `${Math.min(100, p.revenue_share * 4)}%`, backgroundColor: getFamilyColor(p.family) }]} />
+                </View>
+                <Text style={styles.topAmount}>{euros(p.revenue)}</Text>
+                <Text style={styles.topShare}>{p.revenue_share}%</Text>
+              </>
+            ) : (
+              <>
+                <View style={styles.topInfo}>
+                  <Text style={styles.topNameFlex} numberOfLines={1}>{p.name}</Text>
+                  <View style={styles.shareTrack}>
+                    <View style={[styles.shareFill, { width: `${Math.min(100, p.revenue_share * 4)}%`, backgroundColor: getFamilyColor(p.family) }]} />
+                  </View>
+                </View>
+                <View style={styles.topStats}>
+                  <Text style={styles.topAmount}>{euros(p.revenue)}</Text>
+                  <Text style={styles.topShare}>{p.revenue_share}%</Text>
+                </View>
+              </>
+            )}
           </View>
         ))}
-      </View>
+      </Card>
 
       {/* Patrón semanal */}
       {wd.length > 0 && (
-        <View style={styles.section}>
-          <View style={styles.sectionPad}>
-            <SectionHeader title="Ventas por día de la semana" family="laminado" />
-          </View>
-          <Card style={styles.chartCard} shadow="sm">
-            <MiniBarChart
-              height={110}
-              points={[1, 2, 3, 4, 5, 6, 0].map((dowIdx) => {
-                const row = wd.find((d) => d.weekday === dowIdx);
-                return {
-                  value: row?.avg_revenue ?? 0,
-                  label: WEEKDAY_LABELS[dowIdx],
-                  highlight: bestDay?.weekday === dowIdx,
-                };
-              })}
-            />
-            {bestDay && (
-              <Text style={styles.chartCaption}>
-                Mejor día: {WEEKDAY_LABELS[bestDay.weekday]} ({euros(bestDay.avg_revenue)} de media)
-              </Text>
-            )}
-          </Card>
-        </View>
+        <Card style={styles.sectionCard} shadow="sm">
+          <Text style={styles.cardTitle}>Ventas por día de la semana</Text>
+          <MiniBarChart
+            height={110}
+            points={[1, 2, 3, 4, 5, 6, 0].map((dowIdx) => {
+              const row = wd.find((d) => d.weekday === dowIdx);
+              return {
+                value: row?.avg_revenue ?? 0,
+                label: WEEKDAY_LABELS[dowIdx],
+                peak: bestDay?.weekday === dowIdx,
+              };
+            })}
+          />
+          {bestDay && (
+            <Text style={styles.chartCaption}>
+              Mejor día: {WEEKDAY_LABELS[bestDay.weekday]} ({euros(bestDay.avg_revenue)} de media)
+            </Text>
+          )}
+        </Card>
       )}
 
       {/* Rentabilidad */}
       {data.profit.length > 0 && (
-        <View style={styles.section}>
-          <View style={styles.sectionPad}>
-            <SectionHeader title="Rentabilidad (productos con coste)" family="panaderia" />
-          </View>
-          {data.profit.map((p) => (
-            <View key={p.product_id} style={styles.rankRow}>
-              <View style={styles.rankInfo}>
-                <Text style={styles.rankName} numberOfLines={1}>{p.name}</Text>
-                <Text style={styles.rankUnits}>{Math.round(p.units)} uds · coste {p.unit_cost.toFixed(2)} €</Text>
+        <Card style={styles.sectionCard} shadow="sm">
+          <Text style={styles.cardTitle}>Rentabilidad (productos con coste)</Text>
+          {data.profit.map((p, i) => (
+            <View key={p.product_id} style={[styles.listRow, i > 0 && styles.topRowBorder]}>
+              <View style={styles.listInfo}>
+                <Text style={styles.topNameFlex} numberOfLines={1}>{p.name}</Text>
+                <Text style={styles.listMeta}>{Math.round(p.units)} uds · coste {p.unit_cost.toFixed(2)} €</Text>
               </View>
-              <View style={styles.rankStats}>
-                <Text style={[styles.rankRevenue, { color: Colors.success }]}>{euros(p.est_margin)}</Text>
-                <Text style={styles.rankUnits}>{p.margin_pct}% margen</Text>
+              <View style={styles.topStats}>
+                <Text style={[styles.topAmount, { color: Colors.success }]}>{euros(p.est_margin)}</Text>
+                <Text style={styles.topShare}>{p.margin_pct}% margen</Text>
               </View>
             </View>
           ))}
-        </View>
+        </Card>
       )}
 
       {/* Mermas */}
       {data.waste.length > 0 && (
-        <View style={styles.section}>
-          <View style={styles.sectionPad}>
-            <SectionHeader title="Mermas por producto (€)" family="navidad" />
-          </View>
-          {data.waste.map((w) => (
-            <View key={w.product_id} style={styles.rankRow}>
-              <View style={styles.rankInfo}>
-                <Text style={styles.rankName} numberOfLines={1}>{w.name}</Text>
-                <Text style={styles.rankUnits}>{Math.round(w.discarded)} tiradas · {Math.round(w.saved)} guardadas</Text>
+        <Card style={styles.sectionCard} shadow="sm">
+          <Text style={styles.cardTitle}>Mermas por producto (€)</Text>
+          {data.waste.map((w, i) => (
+            <View key={w.product_id} style={[styles.listRow, i > 0 && styles.topRowBorder]}>
+              <View style={styles.listInfo}>
+                <Text style={styles.topNameFlex} numberOfLines={1}>{w.name}</Text>
+                <Text style={styles.listMeta}>{Math.round(w.discarded)} tiradas · {Math.round(w.saved)} guardadas</Text>
               </View>
-              <View style={styles.rankStats}>
-                <Text style={[styles.rankRevenue, { color: Colors.danger }]}>-{euros(w.waste_cost)}</Text>
-                <Text style={styles.rankUnits}>venta perdida {euros(w.lost_revenue)}</Text>
+              <View style={styles.topStats}>
+                <Text style={[styles.topAmount, { color: Colors.danger }]}>-{euros(w.waste_cost)}</Text>
+                <Text style={styles.topShare}>venta perdida {euros(w.lost_revenue)}</Text>
               </View>
             </View>
           ))}
-        </View>
+        </Card>
       )}
 
       <View style={styles.bottomPad} />
@@ -294,17 +362,26 @@ const styles = StyleSheet.create({
     ...Typography.bodyMedium,
     color: Colors.textMuted,
   },
-  emptyEmoji: {
-    fontSize: 48,
-  },
   emptyHint: {
     ...Typography.bodySmall,
     color: Colors.textMuted,
   },
+
+  // Header
   header: {
     padding: Spacing.lg,
     paddingTop: Spacing.xxl,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingLeft: Spacing.lg,
+    paddingTop: Spacing.xxl,
+  },
+  headerText: {
     gap: Spacing.xs,
+    flexShrink: 1,
   },
   title: {
     ...Typography.displayMedium,
@@ -314,78 +391,140 @@ const styles = StyleSheet.create({
     ...Typography.bodySmall,
     color: Colors.textSecondary,
   },
+
+  // KPIs
   kpiGrid: {
     flexDirection: 'row',
     gap: Spacing.md,
     paddingHorizontal: Spacing.lg,
     marginTop: Spacing.md,
   },
-  section: {
-    marginTop: Spacing.xxl,
-  },
-  sectionPad: {
+
+  // Grid de paneles (3fr / 2fr en tablet)
+  panelGrid: {
     paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.sm,
+    marginTop: Spacing.lg,
+    gap: Spacing.md,
   },
-  chartCard: {
-    marginHorizontal: Spacing.lg,
-    gap: Spacing.sm,
+  panelGridRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+  },
+  panelCard: {
+    padding: Spacing.xl,
+    borderRadius: Radius.lg,
+    gap: Spacing.md,
+  },
+  panelLeft: {
+    flex: 3,
+  },
+  panelRight: {
+    flex: 2,
+  },
+  cardTitle: {
+    ...Typography.headingMedium,
+    color: Colors.textPrimary,
   },
   chartCaption: {
-    ...Typography.bodySmall,
-    color: Colors.textMuted,
+    ...Typography.meta,
     textAlign: 'center',
   },
-  insightList: {
-    gap: Spacing.sm,
-    paddingHorizontal: Spacing.lg,
-  },
-  insightCard: {
+
+  // Potenciales de mejora
+  insightRow: {
     flexDirection: 'row',
     gap: Spacing.md,
     alignItems: 'flex-start',
+    paddingTop: Spacing.md,
   },
-  insightEmoji: {
-    fontSize: 28,
+  insightRowBorder: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.divider,
+    marginTop: Spacing.md,
+  },
+  insightTile: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   insightBody: {
     flex: 1,
     gap: 2,
   },
   insightTitle: {
-    ...Typography.labelMedium,
+    fontFamily: Fonts.extraBold,
+    fontSize: 13.5,
+    lineHeight: 18,
     color: Colors.textPrimary,
   },
   insightDetail: {
-    ...Typography.bodySmall,
+    fontFamily: Fonts.medium,
+    fontSize: 12,
+    lineHeight: 17,
     color: Colors.textSecondary,
   },
-  rankRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.bgCard,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    marginBottom: 1,
+  insightEmpty: {
+    ...Typography.meta,
+  },
+
+  // Cards de sección (top productos, semanal, rentabilidad, mermas)
+  sectionCard: {
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.lg,
+    padding: Spacing.xl,
+    borderRadius: Radius.lg,
     gap: Spacing.md,
   },
+
+  // Top productos
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    paddingTop: Spacing.sm,
+    minHeight: 40,
+  },
+  topRowBorder: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.divider,
+    marginTop: Spacing.sm,
+  },
   rankNum: {
-    ...Typography.numberSmall,
+    fontFamily: Fonts.extraBold,
+    fontSize: 14,
+    lineHeight: 20,
     color: Colors.textMuted,
-    width: 26,
+    width: 22,
     textAlign: 'center',
+    fontVariant: ['tabular-nums'],
   },
-  rankInfo: {
-    flex: 1,
-    gap: 4,
+  topName: {
+    ...Typography.bodyMedium,
+    fontFamily: Fonts.bold,
+    color: Colors.textPrimary,
+    width: 210,
   },
-  rankName: {
-    ...Typography.labelMedium,
+  topNameFlex: {
+    ...Typography.bodyMedium,
+    fontFamily: Fonts.bold,
     color: Colors.textPrimary,
   },
+  topInfo: {
+    flex: 1,
+    gap: Spacing.xs,
+  },
   shareTrack: {
-    height: 6,
-    backgroundColor: Colors.borderLight,
+    height: 10,
+    backgroundColor: Colors.divider,
+    borderRadius: Radius.full,
+    overflow: 'hidden',
+  },
+  shareTrackFlex: {
+    flex: 1,
+    height: 10,
+    backgroundColor: Colors.divider,
     borderRadius: Radius.full,
     overflow: 'hidden',
   },
@@ -393,19 +532,41 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: Radius.full,
   },
-  rankStats: {
+  topAmount: {
+    fontFamily: Fonts.extraBold,
+    fontSize: 14,
+    lineHeight: 20,
+    color: Colors.textPrimary,
+    fontVariant: ['tabular-nums'],
+    textAlign: 'right',
+    minWidth: 76,
+  },
+  topShare: {
+    ...Typography.meta,
+    textAlign: 'right',
+    minWidth: 40,
+  },
+  topStats: {
     alignItems: 'flex-end',
     gap: 2,
   },
-  rankRevenue: {
-    ...Typography.labelMedium,
-    color: Colors.primary,
+
+  // Listas (rentabilidad / mermas)
+  listRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    paddingTop: Spacing.sm,
+    minHeight: 44,
   },
-  rankUnits: {
-    ...Typography.bodySmall,
-    color: Colors.textMuted,
-    fontSize: 11,
+  listInfo: {
+    flex: 1,
+    gap: 2,
   },
+  listMeta: {
+    ...Typography.meta,
+  },
+
   bottomPad: {
     height: Spacing.xxxl,
   },

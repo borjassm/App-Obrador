@@ -1,5 +1,6 @@
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
+import { MaterialIcons } from '@expo/vector-icons';
 
 import Card from '@/components/Card';
 import { Screen } from '@/components/Screen';
@@ -33,10 +34,11 @@ export default function SettingsTab() {
     <Screen scrollable>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>⚙️ Ajustes</Text>
+        <Text style={styles.title}>Ajustes</Text>
       </View>
 
       {/* User info */}
+      <Text style={styles.sectionLabel}>Cuenta</Text>
       <Card style={styles.userCard}>
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>
@@ -50,15 +52,20 @@ export default function SettingsTab() {
       </Card>
 
       {/* Datos */}
+      <Text style={styles.sectionLabel}>Datos</Text>
       <Card style={styles.dataCard} onPress={() => router.push('/(tabs)/import-erp')}>
-        <Text style={styles.dataEmoji}>⬆️</Text>
+        <View style={styles.dataIconTile}>
+          <MaterialIcons name="upload-file" size={24} color={Colors.primary} />
+        </View>
         <View style={styles.userInfo}>
           <Text style={styles.userEmail}>Importar ventas del ERP</Text>
           <Text style={styles.userRole}>Carga las exportaciones CSV para alimentar la analítica y las predicciones</Text>
         </View>
+        <MaterialIcons name="chevron-right" size={24} color={Colors.textMuted} />
       </Card>
 
       {/* App info */}
+      <Text style={styles.sectionLabel}>Aplicación</Text>
       <Card style={styles.infoCard}>
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>Versión</Text>
@@ -81,6 +88,7 @@ export default function SettingsTab() {
         onPress={logout}
         style={({ pressed }) => [styles.logoutBtn, pressed && styles.logoutPressed]}
       >
+        <MaterialIcons name="logout" size={20} color={Colors.danger} />
         <Text style={styles.logoutText}>Cerrar sesión</Text>
       </Pressable>
     </Screen>
@@ -95,6 +103,10 @@ const styles = StyleSheet.create({
   title: {
     ...Typography.displayMedium,
     color: Colors.textPrimary,
+  },
+  sectionLabel: {
+    ...Typography.sectionLabel,
+    marginBottom: Spacing.sm,
   },
   userCard: {
     flexDirection: 'row',
@@ -132,8 +144,13 @@ const styles = StyleSheet.create({
     gap: Spacing.lg,
     marginBottom: Spacing.lg,
   },
-  dataEmoji: {
-    fontSize: 28,
+  dataIconTile: {
+    width: 46,
+    height: 46,
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.primaryTint,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   infoCard: {
     gap: 0,
@@ -162,6 +179,9 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     paddingVertical: Spacing.lg,
     alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: Spacing.sm,
   },
   logoutPressed: {
     opacity: 0.8,

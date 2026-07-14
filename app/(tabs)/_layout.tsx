@@ -160,7 +160,6 @@ export default function TabsLayout() {
       <Tabs.Screen name="location/[locationId]" options={{ href: null }} />
 
       {/* Hidden utility routes */}
-      <Tabs.Screen name="close/index" options={{ href: null }} />
       <Tabs.Screen name="import-erp" options={{ href: null }} />
     </Tabs>
   );

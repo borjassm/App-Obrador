@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { router } from 'expo-router';
+import { MaterialIcons } from '@expo/vector-icons';
 
 import Button from '@/components/Button';
 import Card from '@/components/Card';
@@ -74,7 +75,7 @@ export default function ImportErpScreen() {
   return (
     <Screen scrollable>
       <View style={styles.header}>
-        <Text style={styles.title}>⬆️ Importar ventas del ERP</Text>
+        <Text style={styles.title}>Importar ventas del ERP</Text>
         <Text style={styles.subtitle}>
           Selecciona una o varias exportaciones CSV del ERP (separadas por «;»). Se agregan por día,
           tienda y producto, y se cargan sin duplicar: puedes re-importar el mismo archivo sin miedo.
@@ -108,9 +109,16 @@ export default function ImportErpScreen() {
       {results.length > 0 && (
         <View style={styles.results}>
           <Card style={styles.summaryCard} shadow="sm">
-            <Text style={styles.summaryTitle}>
-              {totals.errors === 0 ? '✅ Importación completada' : '⚠️ Importación con avisos'}
-            </Text>
+            <View style={styles.summaryTitleRow}>
+              <MaterialIcons
+                name={totals.errors === 0 ? 'check-circle' : 'warning-amber'}
+                size={20}
+                color={totals.errors === 0 ? Colors.success : Colors.warning}
+              />
+              <Text style={styles.summaryTitle}>
+                {totals.errors === 0 ? 'Importación completada' : 'Importación con avisos'}
+              </Text>
+            </View>
             <Text style={styles.summaryLine}>
               {totals.upserted.toLocaleString('es-ES')} registros de venta cargados
               {totals.products > 0 ? ` · ${totals.products} productos nuevos creados` : ''}
@@ -122,7 +130,7 @@ export default function ImportErpScreen() {
               <Text style={styles.fileName}>{r.fileName}</Text>
               {r.result.dateRange && (
                 <Text style={styles.fileLine}>
-                  Periodo: {r.result.dateRange.from} → {r.result.dateRange.to}
+                  Periodo: {r.result.dateRange.from} – {r.result.dateRange.to}
                 </Text>
               )}
               <Text style={styles.fileLine}>
@@ -130,7 +138,10 @@ export default function ImportErpScreen() {
                 {r.result.aggregated.toLocaleString('es-ES')} totales diarios · {r.result.upserted.toLocaleString('es-ES')} guardados
               </Text>
               {r.result.errors.map((e, j) => (
-                <Text key={j} style={styles.fileError}>⚠️ {e}</Text>
+                <View key={j} style={styles.fileErrorRow}>
+                  <MaterialIcons name="error-outline" size={16} color={Colors.danger} />
+                  <Text style={styles.fileError}>{e}</Text>
+                </View>
               ))}
             </Card>
           ))}
@@ -155,7 +166,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
   },
   title: {
-    ...Typography.headingLarge,
+    ...Typography.displayMedium,
     color: Colors.textPrimary,
   },
   subtitle: {
@@ -205,6 +216,11 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
     backgroundColor: Colors.successLight,
   },
+  summaryTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
   summaryTitle: {
     ...Typography.labelLarge,
     color: Colors.textPrimary,
@@ -224,9 +240,15 @@ const styles = StyleSheet.create({
     ...Typography.bodySmall,
     color: Colors.textMuted,
   },
+  fileErrorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
   fileError: {
     ...Typography.bodySmall,
     color: Colors.danger,
+    flex: 1,
   },
   footer: {
     paddingVertical: Spacing.xl,

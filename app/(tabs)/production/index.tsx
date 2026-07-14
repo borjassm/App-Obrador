@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 
 import Button from '@/components/Button';
 import FilterPills from '@/components/FilterPills';
@@ -82,7 +83,7 @@ export default function ProductionTab() {
   return (
     <Screen scrollable noPadding>
       <View style={styles.header}>
-        <Text style={styles.title}>🥖 Producción</Text>
+        <Text style={styles.title}>Producción</Text>
         <Text style={styles.subtitle}>
           Registra lo producido y compáralo con el plan del día
         </Text>
@@ -115,8 +116,9 @@ export default function ProductionTab() {
 
       {!hasPlan && !loading && (
         <View style={styles.noticeBox}>
+          <MaterialIcons name="event-note" size={20} color={Colors.info} />
           <Text style={styles.noticeText}>
-            📋 No hay plan guardado para este día. Puedes registrar producción igualmente, o crear el plan en la pestaña Planificación.
+            No hay plan guardado para este día. Puedes registrar producción igualmente, o crear el plan en la pestaña Planificación.
           </Text>
         </View>
       )}
@@ -133,6 +135,7 @@ export default function ProductionTab() {
 
       {loading ? (
         <View style={styles.loadingBox}>
+          <MaterialIcons name="hourglass-empty" size={48} color={Colors.textMuted} />
           <Text style={styles.loadingText}>Cargando…</Text>
         </View>
       ) : (
@@ -244,10 +247,14 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.infoLight,
     borderRadius: Radius.md,
     padding: Spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
   },
   noticeText: {
     ...Typography.bodySmall,
     color: Colors.textSecondary,
+    flex: 1,
   },
   filterRow: {
     paddingHorizontal: Spacing.lg,
@@ -261,6 +268,7 @@ const styles = StyleSheet.create({
   loadingBox: {
     alignItems: 'center',
     paddingVertical: Spacing.xxxl,
+    gap: Spacing.md,
   },
   loadingText: {
     ...Typography.bodyMedium,
@@ -344,8 +352,7 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   sheetNumber: {
-    fontSize: 56,
-    fontWeight: '700',
+    ...Typography.numberCounter,
     color: Colors.secondary,
   },
   sheetUnit: {

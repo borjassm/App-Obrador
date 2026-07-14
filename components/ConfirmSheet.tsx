@@ -49,7 +49,10 @@ export default function ConfirmSheet({
           {summary && summary.length > 0 && (
             <View style={styles.summaryBox}>
               {summary.map((item, i) => (
-                <View key={i} style={styles.summaryRow}>
+                <View
+                  key={i}
+                  style={[styles.summaryRow, i > 0 && styles.summaryRowDivider]}
+                >
                   <Text style={styles.summaryLabel}>{item.label}</Text>
                   <Text style={[styles.summaryValue, item.color ? { color: item.color } : undefined]}>
                     {item.value}
@@ -70,7 +73,7 @@ export default function ConfirmSheet({
               title={confirmLabel}
               onPress={onConfirm}
               variant={variant === 'danger' ? 'danger' : 'primary'}
-              style={styles.actionBtn}
+              style={styles.actionBtnWide}
             />
           </View>
         </Pressable>
@@ -86,6 +89,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheet: {
+    width: '100%',
+    maxWidth: 560,
+    alignSelf: 'center',
     backgroundColor: Colors.bgCard,
     borderTopLeftRadius: Radius.xl,
     borderTopRightRadius: Radius.xl,
@@ -96,7 +102,7 @@ const styles = StyleSheet.create({
   handle: {
     width: 40,
     height: 4,
-    borderRadius: 2,
+    borderRadius: Radius.full,
     backgroundColor: Colors.border,
     alignSelf: 'center',
     marginBottom: Spacing.xl,
@@ -115,22 +121,29 @@ const styles = StyleSheet.create({
   },
   summaryBox: {
     backgroundColor: Colors.bgBase,
-    borderRadius: Radius.md,
-    padding: Spacing.lg,
-    gap: Spacing.md,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.divider,
+    paddingHorizontal: Spacing.lg,
     marginBottom: Spacing.xl,
   },
   summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    minHeight: 48,
+  },
+  summaryRowDivider: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.divider,
   },
   summaryLabel: {
     ...Typography.bodyMedium,
     color: Colors.textSecondary,
   },
   summaryValue: {
-    ...Typography.labelLarge,
+    ...Typography.numberSmall,
+    fontSize: 16,
     color: Colors.textPrimary,
   },
   actions: {
@@ -139,5 +152,8 @@ const styles = StyleSheet.create({
   },
   actionBtn: {
     flex: 1,
+  },
+  actionBtnWide: {
+    flex: 2,
   },
 });

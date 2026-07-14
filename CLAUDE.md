@@ -15,7 +15,7 @@ App móvil tablet-first (Expo SDK 54 + React Native + TypeScript + Expo Router) 
 gestión de un obrador/pastelería: analítica de ventas, stock (ingredientes + producto),
 producción, planificación con predicción y mejora continua, e importador de ventas ERP.
 Objetivo: venderla al obrador. GitHub: `borjassm/App-Obrador` (rama de trabajo:
-`fase0-fase1-stock-perdidas`; `main` está vacía).
+`fase0-fase1-stock-perdidas`; `main` se mantiene sincronizada para Claude Design).
 
 ## Backend — Supabase
 - Proyecto: **"Obrador App"** = `yjdctletbgmqiutnibwn` (eu-west-2). Plan free:
@@ -42,3 +42,9 @@ Objetivo: venderla al obrador. GitHub: `borjassm/App-Obrador` (rama de trabajo:
 - `.env` (no versionado) se genera copiando `.env.example`.
 - UI en español, tablet-first; reutilizar componentes de `components/` y el tema de
   `constants/theme.ts`.
+- **Estilo visual (obligatorio en toda UI nueva o modificada):** seguir el rediseño v1
+  (`design_handoff_rediseno_v1/README.md`). En la práctica: tokens de `constants/theme.ts`
+  (paleta espresso/teal, fuente Manrope, Radius, Shadows casi planas), NUNCA emojis
+  (iconos de `@expo/vector-icons`), números tabulares, touch targets >= 56px,
+  segmented controls (FilterPills), sidebar lateral en tablet (>= 768px,
+  `TABLET_BREAKPOINT`), pressed = opacity 0.85 + scale 0.98.

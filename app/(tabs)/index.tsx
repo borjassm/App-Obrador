@@ -1,53 +1,117 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { router } from 'expo-router';
+import { MaterialIcons } from '@expo/vector-icons';
 
 import Button from '@/components/Button';
+import Card from '@/components/Card';
 import LocationCard from '@/components/LocationCard';
 import { Screen } from '@/components/Screen';
-import { Colors, Spacing, Typography } from '@/constants/theme';
+import SectionHeader from '@/components/SectionHeader';
+import { Colors, Fonts, Radius, Spacing, TABLET_BREAKPOINT, Typography } from '@/constants/theme';
+import { useAnalytics } from '@/hooks/useAnalytics';
 import { useGreeting } from '@/hooks/useGreeting';
-import { useSession } from '@/hooks/useSession';
-import { locationService } from '@/services/location.service';
 import { useLocationStatus } from '@/hooks/useLocationStatus';
+import { usePlanningData } from '@/hooks/usePlanningData';
+import { useSession } from '@/hooks/useSession';
+import { useStock } from '@/hooks/useStock';
+import { locationService } from '@/services/location.service';
 
 interface LocationRow {
   id: string;
   name: string;
 }
 
-function LocationCardWithStatus({ location }: { location: LocationRow }) {
+function capitalize(s: string): string {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+
+function todayLongDate(): string {
+  const formatted = new Date().toLocaleDateString('es-ES', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
+  return capitalize(formatted);
+}
+
+/** '2026-07-12' → '12/07' */
+function shortDate(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const parts = iso.split('-');
+  if (parts.length < 3) return null;
+  return `${parts[2]}/${parts[1]}`;
+}
+
+function initials(name: string): string {
+  const parts = name.replace(/[._-]+/g, ' ').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'OB';
+  const chars = parts.length >= 2 ? `${parts[0][0]}${parts[1][0]}` : parts[0].slice(0, 2);
+  return chars.toUpperCase();
+}
+
+function LocationCardWithStatus({ location, isTablet }: { location: LocationRow; isTablet: boolean }) {
   const { status, entryCount, totalProducts } = useLocationStatus(location.id);
-
-  const statusLabel =
-    status === 'closed' ? 'Registrado ✓' :
-    status === 'open' ? `En curso (${entryCount}/${totalProducts})` :
-    'Pendiente';
-
-  const statusVariant: 'success' | 'warning' | 'neutral' =
-    status === 'closed' ? 'success' :
-    status === 'open' ? 'warning' :
-    'neutral';
 
   return (
     <LocationCard
       locationName={location.name}
-      status={statusLabel}
-      statusVariant={statusVariant}
+      status={status}
+      entryCount={entryCount}
+      totalProducts={totalProducts}
+      tablet={isTablet}
+      compact={!isTablet && status === 'closed'}
       onPress={() => router.push(`/(tabs)/location/${location.id}`)}
     />
+  );
+}
+
+interface KpiCardProps {
+  icon: keyof typeof MaterialIcons.glyphMap;
+  iconColor: string;
+  value: string;
+  description: string;
+  horizontal?: boolean;
+}
+
+function KpiCard({ icon, iconColor, value, description, horizontal }: KpiCardProps) {
+  return (
+    <Card style={StyleSheet.flatten([styles.kpiCard, horizontal && styles.kpiCardHorizontal])}>
+      <MaterialIcons name={icon} size={horizontal ? 24 : 20} color={iconColor} />
+      <View style={styles.kpiText}>
+        <Text style={horizontal ? styles.kpiValue : styles.kpiValueSmall}>{value}</Text>
+        <Text style={horizontal ? styles.kpiDesc : styles.kpiDescSmall}>{description}</Text>
+      </View>
+    </Card>
   );
 }
 
 export default function HomeTab() {
   const greeting = useGreeting();
   const { session } = useSession();
+  const { width } = useWindowDimensions();
+  const isTablet = width >= TABLET_BREAKPOINT;
+
   const [locations, setLocations] = useState<LocationRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const { plans, loading: planLoading } = usePlanningData();
+  const { lowCount, loading: stockLoading } = useStock();
+  const { data: analytics } = useAnalytics();
+
   const userEmail = session?.user?.email ?? '';
-  const userName = userEmail.split('@')[0] ?? '';
+  const userName = capitalize(userEmail.split('@')[0] ?? '');
+
+  const totalPlanned = plans.reduce((sum, p) => sum + p.suggested, 0);
+  const salesDate = shortDate(analytics?.anchorSale);
+  const lastDay =
+    analytics?.series && analytics.series.length > 0
+      ? analytics.series[analytics.series.length - 1]
+      : null;
+  const lastRevenue = lastDay
+    ? `${Math.round(lastDay.revenue).toLocaleString('es-ES', { maximumFractionDigits: 0 })} €`
+    : '—';
 
   const loadLocations = useCallback(async () => {
     setLoading(true);
@@ -74,14 +138,27 @@ export default function HomeTab() {
 
   return (
     <Screen scrollable>
-      <View style={styles.header}>
-        <Text style={styles.greeting}>{greeting} 👋</Text>
-        {userName ? <Text style={styles.user}>{userName}</Text> : null}
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Tus ubicaciones</Text>
-        <Text style={styles.sectionSub}>Selecciona una para registrar sobrantes</Text>
+      {/* Header: fecha + saludo · chip de sincronización (tablet) o avatar (móvil) */}
+      <View style={[styles.headerRow, isTablet ? styles.headerRowTablet : styles.headerRowMobile]}>
+        <View style={styles.headerText}>
+          <Text style={[styles.date, !isTablet && styles.dateMobile]}>{todayLongDate()}</Text>
+          <Text style={[styles.greeting, !isTablet && styles.greetingMobile]}>
+            {greeting}
+            {userName ? `, ${userName}` : ''}
+          </Text>
+        </View>
+        {isTablet ? (
+          <View style={styles.syncChip}>
+            <MaterialIcons name="sync" size={19} color={Colors.secondary} />
+            <Text style={styles.syncChipText}>
+              Ventas al día{salesDate ? ` · ${salesDate}` : ''}
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{initials(userName)}</Text>
+          </View>
+        )}
       </View>
 
       {/* Loading */}
@@ -95,7 +172,7 @@ export default function HomeTab() {
       {/* Error */}
       {!loading && error && (
         <View style={styles.center}>
-          <Text style={styles.errorEmoji}>⚠️</Text>
+          <MaterialIcons name="error-outline" size={48} color={Colors.textMuted} />
           <Text style={styles.errorText}>{error}</Text>
           <Button title="Reintentar" variant="secondary" onPress={loadLocations} />
         </View>
@@ -104,17 +181,67 @@ export default function HomeTab() {
       {/* Empty */}
       {!loading && !error && locations.length === 0 && (
         <View style={styles.center}>
-          <Text style={styles.errorEmoji}>📍</Text>
+          <MaterialIcons name="location-off" size={48} color={Colors.textMuted} />
           <Text style={styles.centerText}>No hay ubicaciones configuradas</Text>
         </View>
       )}
 
-      {/* Loaded */}
+      {/* Tarjetas de ubicación: grid 2 columnas (1b) / una columna (1g) */}
       {!loading && !error && locations.length > 0 && (
-        <View style={styles.cards}>
+        <View style={[styles.cards, isTablet && styles.cardsTablet]}>
           {locations.map((loc) => (
-            <LocationCardWithStatus key={loc.id} location={loc} />
+            <View key={loc.id} style={isTablet ? styles.cardCellTablet : undefined}>
+              <LocationCardWithStatus location={loc} isTablet={isTablet} />
+            </View>
           ))}
+        </View>
+      )}
+
+      {/* Mini-KPIs de hoy */}
+      {isTablet ? (
+        <View>
+          <SectionHeader title="Hoy en el obrador" />
+          <View style={styles.kpiRowTablet}>
+            <KpiCard
+              icon="event-note"
+              iconColor={Colors.secondary}
+              value={planLoading ? '—' : `${totalPlanned.toLocaleString('es-ES')} uds`}
+              description="plan de producción de hoy"
+              horizontal
+            />
+            <KpiCard
+              icon="warning"
+              iconColor={Colors.danger}
+              value={stockLoading ? '—' : `${lowCount} ${lowCount === 1 ? 'ingrediente' : 'ingredientes'}`}
+              description="por debajo del mínimo"
+              horizontal
+            />
+            <KpiCard
+              icon="payments"
+              iconColor={Colors.primary}
+              value={lastRevenue}
+              description={salesDate ? `ventas del ${salesDate}` : 'ventas de ayer'}
+              horizontal
+            />
+          </View>
+        </View>
+      ) : (
+        <View>
+          <SectionHeader title="Hoy" />
+          <View style={styles.kpiRowMobile}>
+            <KpiCard
+              icon="event-note"
+              iconColor={Colors.secondary}
+              value={planLoading ? '—' : `${totalPlanned.toLocaleString('es-ES')} uds`}
+              description="plan de hoy"
+            />
+            <KpiCard
+              icon="warning"
+              iconColor={Colors.danger}
+              value={stockLoading ? '—' : `${lowCount} ${lowCount === 1 ? 'bajo' : 'bajos'}`}
+              description="stock mínimo"
+            />
+          </View>
         </View>
       )}
     </Screen>
@@ -122,33 +249,126 @@ export default function HomeTab() {
 }
 
 const styles = StyleSheet.create({
-  header: {
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: Spacing.lg,
+    marginBottom: Spacing.md,
+  },
+  headerRowTablet: {
+    alignItems: 'flex-end',
+  },
+  headerRowMobile: {
+    alignItems: 'center',
+  },
+  headerText: {
     gap: Spacing.xs,
-    marginBottom: Spacing.lg,
-    paddingTop: Spacing.xl,
+    flexShrink: 1,
+  },
+  date: {
+    ...Typography.bodyMedium,
+    color: Colors.textMuted,
+  },
+  dateMobile: {
+    ...Typography.bodySmall,
+    color: Colors.textMuted,
   },
   greeting: {
     ...Typography.displayMedium,
     color: Colors.textPrimary,
   },
-  user: {
-    ...Typography.bodyLarge,
+  greetingMobile: {
+    fontSize: 24,
+    lineHeight: 31,
+    letterSpacing: -0.4,
+  },
+  syncChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    height: 44,
+    paddingHorizontal: 18,
+    backgroundColor: Colors.bgCard,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.full,
+  },
+  syncChipText: {
+    ...Typography.labelMedium,
     color: Colors.textSecondary,
   },
-  section: {
-    gap: Spacing.xs,
-    marginBottom: Spacing.lg,
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: Radius.full,
+    backgroundColor: Colors.secondary,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  sectionTitle: {
-    ...Typography.headingSmall,
-    color: Colors.textPrimary,
-  },
-  sectionSub: {
-    ...Typography.bodyMedium,
-    color: Colors.textMuted,
+  avatarText: {
+    fontFamily: Fonts.extraBold,
+    fontSize: 13,
+    color: Colors.textOnPrimary,
   },
   cards: {
     gap: Spacing.lg,
+  },
+  cardsTablet: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 20,
+  },
+  cardCellTablet: {
+    flexBasis: '47%',
+    flexGrow: 1,
+  },
+  kpiRowTablet: {
+    flexDirection: 'row',
+    gap: Spacing.lg,
+  },
+  kpiRowMobile: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+  },
+  kpiCard: {
+    flex: 1,
+    borderRadius: Radius.lg,
+    padding: Spacing.lg,
+    gap: Spacing.xs,
+  },
+  kpiCardHorizontal: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.lg,
+    paddingVertical: 20,
+    paddingHorizontal: 22,
+  },
+  kpiText: {
+    gap: 1,
+    flexShrink: 1,
+  },
+  kpiValue: {
+    ...Typography.numberSmall,
+    color: Colors.textPrimary,
+  },
+  kpiValueSmall: {
+    fontFamily: Fonts.extraBold,
+    fontSize: 18,
+    lineHeight: 24,
+    fontVariant: ['tabular-nums'],
+    color: Colors.textPrimary,
+  },
+  kpiDesc: {
+    fontFamily: Fonts.semiBold,
+    fontSize: 12.5,
+    lineHeight: 17,
+    color: Colors.textMuted,
+  },
+  kpiDescSmall: {
+    fontFamily: Fonts.semiBold,
+    fontSize: 11.5,
+    lineHeight: 16,
+    color: Colors.textMuted,
   },
   center: {
     alignItems: 'center',
@@ -158,9 +378,6 @@ const styles = StyleSheet.create({
   centerText: {
     ...Typography.bodyMedium,
     color: Colors.textMuted,
-  },
-  errorEmoji: {
-    fontSize: 48,
   },
   errorText: {
     ...Typography.bodyMedium,

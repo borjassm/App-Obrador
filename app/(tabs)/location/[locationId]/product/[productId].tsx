@@ -1,13 +1,21 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { MaterialIcons } from '@expo/vector-icons';
 
 import Button from '@/components/Button';
+import QuantityDisplay from '@/components/QuantityDisplay';
 import { Screen } from '@/components/Screen';
-import Stepper from '@/components/Stepper';
-import { Colors, Radius, Spacing, Typography, getFamilyColor } from '@/constants/theme';
-import { getProductEmoji } from '@/constants/products';
+import {
+  Colors,
+  Fonts,
+  Radius,
+  Spacing,
+  Typography,
+  getFamilyTint,
+} from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
+import { productService, type Product } from '@/services/product.service';
 import { sessionService } from '@/services/session.service';
 import { useSession } from '@/hooks/useSession';
 
@@ -15,6 +23,8 @@ function todayISO(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
+
+type SaveStatus = 'idle' | 'saving' | 'saved';
 
 export default function ProductDetail() {
   const { locationId, productId } = useLocalSearchParams<{ locationId: string; productId: string }>();
@@ -24,7 +34,8 @@ export default function ProductDetail() {
   const [savedQty, setSavedQty] = useState(0);
   const [discardedQty, setDiscardedQty] = useState(0);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+  const [orderedProducts, setOrderedProducts] = useState<Product[]>([]);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedRef = useRef(0);
@@ -36,11 +47,24 @@ export default function ProductDetail() {
   useEffect(() => { discardedRef.current = discardedQty; }, [discardedQty]);
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
 
+  // Lista ordenada de productos (para "X de Y" y "Siguiente")
+  useEffect(() => {
+    productService.listGroupedByFamily().then((groups) => {
+      setOrderedProducts(groups.flatMap((g) => g.products));
+    });
+  }, []);
+
   // Load product info and existing entry
   useEffect(() => {
     if (!productId || !locationId || !session?.user.id) return;
 
     const load = async () => {
+      // Reset al cambiar de producto
+      setProduct(null);
+      setSavedQty(0);
+      setDiscardedQty(0);
+      setSaveStatus('idle');
+
       // Get product details
       const { data: prod } = await supabase
         .from('products')
@@ -101,7 +125,7 @@ export default function ProductDetail() {
     scheduleSave();
   }, [scheduleSave]);
 
-  // Cleanup debounce on unmount — save immediately if pending
+  // Cleanup debounce on unmount / cambio de producto — save immediately if pending
   useEffect(() => {
     return () => {
       if (debounceRef.current) {
@@ -114,66 +138,120 @@ export default function ProductDetail() {
     };
   }, [productId]);
 
-  const familyColor = product ? getFamilyColor(product.family) : Colors.primary;
-  const emoji = product ? getProductEmoji(product.name) : '';
+  // Posición en la lista y siguiente producto
+  const { position, total, nextId } = useMemo(() => {
+    const idx = orderedProducts.findIndex((p) => p.id === productId);
+    return {
+      position: idx >= 0 ? idx + 1 : 0,
+      total: orderedProducts.length,
+      nextId: idx >= 0 && idx < orderedProducts.length - 1 ? orderedProducts[idx + 1].id : null,
+    };
+  }, [orderedProducts, productId]);
+
+  const handleNext = () => {
+    if (nextId) {
+      router.setParams({ productId: nextId });
+    } else {
+      router.back();
+    }
+  };
 
   if (!product) {
     return (
       <Screen>
         <View style={styles.loading}>
+          <MaterialIcons name="hourglass-empty" size={48} color={Colors.textMuted} />
           <Text style={styles.loadingText}>Cargando…</Text>
         </View>
       </Screen>
     );
   }
 
+  const chipSaving = saveStatus === 'saving';
+  const chipSaved = saveStatus === 'saved';
+
   return (
     <Screen scrollable>
-      {/* Product header with emoji */}
-      <View style={styles.header}>
-        <Text style={styles.headerEmoji}>{emoji}</Text>
-        <Text style={styles.productName}>{product.name}</Text>
-        <View style={[styles.familyBadge, { backgroundColor: familyColor + '20' }]}>
-          <Text style={[styles.familyName, { color: familyColor }]}>
-            {product.family.charAt(0).toUpperCase() + product.family.slice(1)}
+      {/* Top bar: back circular + contador + chip de guardado */}
+      <View style={styles.topBar}>
+        <Pressable
+          onPress={() => router.back()}
+          style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}
+          hitSlop={8}
+        >
+          <MaterialIcons name="arrow-back" size={22} color={Colors.textPrimary} />
+        </Pressable>
+
+        <Text style={styles.counter}>
+          {position > 0 ? `${position} de ${total}` : ''}
+        </Text>
+
+        <View
+          style={[
+            styles.saveChip,
+            { backgroundColor: chipSaved ? Colors.successLight : Colors.borderLight },
+          ]}
+        >
+          <MaterialIcons
+            name={chipSaving ? 'cloud-upload' : 'cloud-done'}
+            size={16}
+            color={chipSaved ? Colors.success : Colors.textSecondary}
+          />
+          <Text
+            style={[
+              styles.saveChipText,
+              { color: chipSaved ? Colors.success : Colors.textSecondary },
+            ]}
+          >
+            {chipSaving ? 'Guardando…' : chipSaved ? 'Guardado' : 'Autoguardado'}
           </Text>
         </View>
       </View>
 
-      {/* Guardado (para mañana) */}
-      <View style={styles.counterSection}>
-        <Text style={styles.counterLabel}>Guardado</Text>
-        <Text style={styles.counterHint}>Lo que se guarda para vender mañana</Text>
-        <View style={styles.display}>
-          <Text style={[styles.number, { color: Colors.primary }]}>{savedQty}</Text>
-          <Text style={styles.unit}>uds</Text>
+      {/* Cabecera de producto: chip de familia + nombre */}
+      <View style={styles.header}>
+        <View style={[styles.familyChip, { backgroundColor: getFamilyTint(product.family) }]}>
+          <Text style={styles.familyChipText}>{product.family}</Text>
         </View>
-        <Stepper value={savedQty} onChange={handleSavedChange} color={Colors.primary} min={0} />
+        <Text style={styles.productName}>{product.name}</Text>
       </View>
+
+      {/* Guardado (para mañana) */}
+      <QuantityDisplay
+        label="Guardado"
+        hint="Se guarda para vender mañana"
+        icon="archive"
+        value={savedQty}
+        onChange={handleSavedChange}
+        color={Colors.primary}
+        tint={Colors.primaryTint}
+        size="counter"
+      />
 
       {/* Tirado / Merma */}
-      <View style={[styles.counterSection, styles.discardSection]}>
-        <Text style={styles.counterLabel}>Tirado / Merma</Text>
-        <Text style={styles.counterHint}>Lo que se desecha (pérdida)</Text>
-        <View style={styles.display}>
-          <Text style={[styles.number, { color: Colors.danger }]}>{discardedQty}</Text>
-          <Text style={styles.unit}>uds</Text>
-        </View>
-        <Stepper value={discardedQty} onChange={handleDiscardedChange} color={Colors.danger} min={0} />
-      </View>
+      <QuantityDisplay
+        label="Tirado / Merma"
+        hint="Se desecha (pérdida)"
+        icon="delete"
+        value={discardedQty}
+        onChange={handleDiscardedChange}
+        color={Colors.danger}
+        tint={Colors.dangerLight}
+        size="counter"
+      />
 
-      {/* Save status indicator */}
-      <View style={styles.statusRow}>
-        {saveStatus === 'saving' && <Text style={styles.statusSaving}>Guardando…</Text>}
-        {saveStatus === 'saved' && <Text style={styles.statusSaved}>Guardado ✓</Text>}
-      </View>
-
-      {/* Back button */}
+      {/* Footer: volver + siguiente */}
       <View style={styles.footer}>
         <Button
           title="Volver"
           variant="ghost"
           onPress={() => router.back()}
+          style={styles.footerBack}
+        />
+        <Button
+          title={nextId ? 'Siguiente' : 'Finalizar'}
+          onPress={handleNext}
+          style={styles.footerNext}
         />
       </View>
     </Screen>
@@ -185,81 +263,89 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: Spacing.md,
   },
   loadingText: {
     ...Typography.bodyMedium,
     color: Colors.textMuted,
   },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.md,
+    marginBottom: Spacing.sm,
+  },
+  backBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: Radius.full,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    backgroundColor: Colors.bgCard,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  counter: {
+    ...Typography.labelMedium,
+    color: Colors.textSecondary,
+    fontVariant: ['tabular-nums'],
+    textAlign: 'center',
+    flex: 1,
+  },
+  saveChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 6,
+    borderRadius: Radius.full,
+  },
+  saveChipText: {
+    fontFamily: Fonts.bold,
+    fontSize: 12,
+    lineHeight: 16,
+  },
   header: {
     alignItems: 'center',
-    paddingVertical: Spacing.lg,
     gap: Spacing.sm,
+    paddingVertical: Spacing.lg,
   },
-  headerEmoji: {
-    fontSize: 56,
-    marginBottom: Spacing.xs,
+  familyChip: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 6,
+    borderRadius: Radius.full,
+  },
+  familyChipText: {
+    fontFamily: Fonts.extraBold,
+    fontSize: 12,
+    lineHeight: 16,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    color: Colors.textPrimary,
   },
   productName: {
-    ...Typography.headingLarge,
+    fontFamily: Fonts.extraBold,
+    fontSize: 24,
+    lineHeight: 30,
     color: Colors.textPrimary,
     textAlign: 'center',
   },
-  familyBadge: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: Radius.full,
-  },
-  familyName: {
-    ...Typography.labelSmall,
-  },
-  counterSection: {
-    alignItems: 'center',
-    gap: Spacing.md,
-    paddingVertical: Spacing.lg,
-  },
-  discardSection: {
-    borderTopWidth: 1,
-    borderTopColor: Colors.borderLight,
-    marginTop: Spacing.sm,
-  },
-  counterLabel: {
-    ...Typography.headingMedium,
-    color: Colors.textPrimary,
-  },
-  counterHint: {
-    ...Typography.bodySmall,
-    color: Colors.textMuted,
-    marginTop: -Spacing.xs,
-  },
-  display: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: Spacing.sm,
-  },
-  number: {
-    fontSize: 64,
-    fontWeight: '700',
-    lineHeight: 72,
-  },
-  unit: {
-    ...Typography.bodyLarge,
-    color: Colors.textMuted,
-  },
-  statusRow: {
-    height: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  statusSaving: {
-    ...Typography.bodySmall,
-    color: Colors.textMuted,
-  },
-  statusSaved: {
-    ...Typography.labelSmall,
-    color: Colors.success,
-  },
   footer: {
+    flexDirection: 'row',
+    gap: Spacing.md,
     paddingTop: Spacing.lg,
     paddingBottom: Spacing.xxl,
+  },
+  footerBack: {
+    flex: 1,
+  },
+  footerNext: {
+    flex: 3,
+    minHeight: 58,
+  },
+  pressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.98 }],
   },
 });
