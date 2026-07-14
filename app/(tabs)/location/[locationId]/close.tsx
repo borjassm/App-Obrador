@@ -69,6 +69,8 @@ export default function SobrantesScreen() {
   const { locationId } = useLocalSearchParams<{ locationId: string }>();
   const { width } = useWindowDimensions();
   const isTablet = width >= TABLET_BREAKPOINT;
+  // Panel de detalle = ancho - rail (92) - lista (400); si queda estrecho, contadores en columna
+  const stackCounters = isTablet && width - 492 < 640;
 
   const {
     sessionStatus,
@@ -354,7 +356,7 @@ export default function SobrantesScreen() {
                 <AutosaveChip state={chipState} />
               </View>
 
-              <View style={styles.countersRow}>
+              <View style={[styles.countersRow, stackCounters && styles.countersColumn]}>
                 <QuantityDisplay
                   label="Guardado"
                   hint="Se guarda para vender mañana"
@@ -560,6 +562,9 @@ const styles = StyleSheet.create({
   countersRow: {
     flexDirection: 'row',
     gap: Spacing.lg,
+  },
+  countersColumn: {
+    flexDirection: 'column',
   },
   counterCard: {
     flex: 1,
