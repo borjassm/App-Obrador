@@ -1,7 +1,8 @@
 import { StyleSheet, Text, View } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 
 import Card from '@/components/Card';
-import { Colors, Spacing, Typography } from '@/constants/theme';
+import { Colors, Fonts, Radius, Spacing, Typography } from '@/constants/theme';
 
 interface Props {
   label: string;
@@ -11,16 +12,22 @@ interface Props {
   color?: string;
 }
 
-export default function KPICard({ label, value, unit, trend, color = Colors.primary }: Props) {
+const TREND_ICON: Record<'up' | 'down' | 'flat', 'trending-up' | 'trending-down' | 'trending-flat'> = {
+  up: 'trending-up',
+  down: 'trending-down',
+  flat: 'trending-flat',
+};
+
+export default function KPICard({ label, value, unit, trend, color = Colors.textPrimary }: Props) {
   const trendColor =
     trend?.direction === 'up' ? Colors.success :
     trend?.direction === 'down' ? Colors.danger :
     Colors.textMuted;
 
-  const trendIcon =
-    trend?.direction === 'up' ? '↑' :
-    trend?.direction === 'down' ? '↓' :
-    '→';
+  const trendBg =
+    trend?.direction === 'up' ? Colors.successLight :
+    trend?.direction === 'down' ? Colors.dangerLight :
+    Colors.divider;
 
   return (
     <Card shadow="sm" style={styles.card}>
@@ -32,10 +39,9 @@ export default function KPICard({ label, value, unit, trend, color = Colors.prim
       </View>
 
       {trend && (
-        <View style={[styles.trendBadge, { backgroundColor: `${trendColor}18` }]}>
-          <Text style={[styles.trendText, { color: trendColor }]}>
-            {trendIcon} {trend.label}
-          </Text>
+        <View style={[styles.trendBadge, { backgroundColor: trendBg }]}>
+          <MaterialIcons name={TREND_ICON[trend.direction]} size={14} color={trendColor} />
+          <Text style={[styles.trendText, { color: trendColor }]}>{trend.label}</Text>
         </View>
       )}
     </Card>
@@ -49,7 +55,9 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
   },
   label: {
-    ...Typography.bodySmall,
+    fontFamily: Fonts.bold,
+    fontSize: 12.5,
+    lineHeight: 17,
     color: Colors.textMuted,
   },
   valueRow: {
@@ -58,7 +66,7 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
   },
   value: {
-    ...Typography.numberMedium,
+    ...Typography.numberLarge,
   },
   unit: {
     ...Typography.bodySmall,
@@ -66,13 +74,17 @@ const styles = StyleSheet.create({
   },
   trendBadge: {
     alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     paddingHorizontal: Spacing.sm,
-    paddingVertical: 2,
-    borderRadius: 6,
+    paddingVertical: 3,
+    borderRadius: Radius.full,
     marginTop: Spacing.xs,
   },
   trendText: {
-    ...Typography.bodySmall,
-    fontWeight: '600',
+    fontFamily: Fonts.extraBold,
+    fontSize: 12,
+    lineHeight: 16,
   },
 });

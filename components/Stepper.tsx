@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { Colors, Radius, Shadows, Spacing, TOUCH_TARGET_MIN, Typography } from '@/constants/theme';
+import { Colors, Shadows, Spacing, Typography } from '@/constants/theme';
 
 interface Props {
   value: number;
@@ -64,16 +64,16 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   btn: {
-    minWidth: TOUCH_TARGET_MIN,
-    minHeight: TOUCH_TARGET_MIN,
-    borderRadius: Radius.md,
+    minWidth: 60,
+    minHeight: 60,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     ...Shadows.sm,
   },
   btnMinus: {
     backgroundColor: Colors.bgCard,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: Colors.border,
   },
   btnText: {

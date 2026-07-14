@@ -1,71 +1,103 @@
 import { TextStyle } from 'react-native';
 
+// Rediseño v1 — tokens según design_handoff_rediseno_v1/README.md
 export const Colors = {
-  // Primary — warm brown (bread crust)
-  primary: '#8B5E3C',
-  primaryLight: '#A67B5B',
-  primaryDark: '#6B4226',
+  // Primary — espresso
+  primary: '#6F4A26',
+  primaryLight: '#8A6239',
+  primaryDark: '#5A3B1E',
+  primaryTint: '#F1E7D9', // fondos suaves / estado activo
 
-  // Secondary — muted teal (freshness)
-  secondary: '#2A9D8F',
-  secondaryLight: '#4EC6B8',
+  // Secondary — teal refinado
+  secondary: '#17766B',
+  secondaryLight: '#7BC4A8',
+  secondaryTint: '#E1F0ED',
 
   // Background hierarchy
-  bgBase: '#FDF8F3',
+  bgBase: '#F6F1E9',
   bgCard: '#FFFFFF',
-  bgElevated: '#FFFAF5',
-  bgDark: '#3D2B1F',
+  bgElevated: '#FFFFFF',
+  bgDark: '#2A1F14',
 
   // Text hierarchy
-  textPrimary: '#2C1810',
-  textSecondary: '#6B5B4E',
-  textMuted: '#A89888',
-  textOnDark: '#FDF8F3',
+  textPrimary: '#2A1F14',
+  textSecondary: '#6E5D4B',
+  textMuted: '#A3927D',
+  textOnDark: '#F6F1E9',
   textOnPrimary: '#FFFFFF',
 
   // Status
-  success: '#4CAF50',
-  successLight: '#E8F5E9',
-  warning: '#FF9800',
-  warningLight: '#FFF3E0',
-  danger: '#E53935',
-  dangerLight: '#FFEBEE',
-  info: '#42A5F5',
-  infoLight: '#E3F2FD',
+  success: '#2E7D4F',
+  successLight: '#E4F2E9',
+  warning: '#C77B21',
+  warningLight: '#FBF0DF',
+  danger: '#C24B33',
+  dangerLight: '#F9E8E3',
+  info: '#17766B',
+  infoLight: '#E1F0ED',
 
   // Product family colors
-  familyPanaderia: '#D4A574',
-  familyLaminado: '#E8C97A',
-  familyNavidad: '#C44D4D',
+  familyPanaderia: '#C99B62',
+  familyLaminado: '#DDBE6C',
+  familyNavidad: '#B34A44',
 
   // Borders
-  border: '#E8DDD2',
-  borderLight: '#F0E8DE',
-  divider: '#F0E8DE',
+  border: '#E7DCCC',
+  borderLight: '#EDE3D3',
+  divider: '#F1E9DC',
 
   // Overlay
-  overlay: 'rgba(44, 24, 16, 0.5)',
+  overlay: 'rgba(42, 31, 20, 0.5)',
 } as const;
 
+// Manrope (expo-google-fonts). En RN cada peso es una familia propia.
+export const Fonts = {
+  regular: 'Manrope_400Regular',
+  medium: 'Manrope_500Medium',
+  semiBold: 'Manrope_600SemiBold',
+  bold: 'Manrope_700Bold',
+  extraBold: 'Manrope_800ExtraBold',
+} as const;
+
+const TABULAR: TextStyle = { fontVariant: ['tabular-nums'] };
+
 export const Typography: Record<string, TextStyle> = {
-  displayLarge: { fontSize: 32, fontWeight: '700', lineHeight: 40, letterSpacing: -0.5 },
-  displayMedium: { fontSize: 28, fontWeight: '700', lineHeight: 36 },
+  // Display — títulos de pantalla / hero de login
+  displayLarge: { fontFamily: Fonts.extraBold, fontSize: 38, lineHeight: 46, letterSpacing: -0.5 },
+  displayMedium: { fontFamily: Fonts.extraBold, fontSize: 30, lineHeight: 38, letterSpacing: -0.5 },
 
-  headingLarge: { fontSize: 24, fontWeight: '600', lineHeight: 32 },
-  headingMedium: { fontSize: 20, fontWeight: '600', lineHeight: 28 },
-  headingSmall: { fontSize: 18, fontWeight: '600', lineHeight: 24 },
+  // Headings — títulos de card y de sección de card
+  headingLarge: { fontFamily: Fonts.extraBold, fontSize: 19, lineHeight: 26 },
+  headingMedium: { fontFamily: Fonts.extraBold, fontSize: 16, lineHeight: 22 },
+  headingSmall: { fontFamily: Fonts.extraBold, fontSize: 15, lineHeight: 20 },
 
-  bodyLarge: { fontSize: 17, fontWeight: '400', lineHeight: 24 },
-  bodyMedium: { fontSize: 15, fontWeight: '400', lineHeight: 22 },
-  bodySmall: { fontSize: 13, fontWeight: '400', lineHeight: 18 },
+  // Label de sección (uppercase, muted)
+  sectionLabel: {
+    fontFamily: Fonts.extraBold,
+    fontSize: 13,
+    lineHeight: 18,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    color: Colors.textMuted,
+  },
 
-  labelLarge: { fontSize: 17, fontWeight: '600', lineHeight: 24, letterSpacing: 0.3 },
-  labelMedium: { fontSize: 15, fontWeight: '600', lineHeight: 20 },
-  labelSmall: { fontSize: 13, fontWeight: '600', lineHeight: 16, letterSpacing: 0.5 },
+  // Body
+  bodyLarge: { fontFamily: Fonts.semiBold, fontSize: 15, lineHeight: 22 },
+  bodyMedium: { fontFamily: Fonts.semiBold, fontSize: 14, lineHeight: 20 },
+  bodySmall: { fontFamily: Fonts.semiBold, fontSize: 13, lineHeight: 18 },
+  meta: { fontFamily: Fonts.semiBold, fontSize: 12, lineHeight: 16, color: Colors.textMuted },
 
-  numberLarge: { fontSize: 40, fontWeight: '700', lineHeight: 48 },
-  numberMedium: { fontSize: 28, fontWeight: '700', lineHeight: 36 },
-  numberSmall: { fontSize: 20, fontWeight: '600', lineHeight: 28 },
+  // Labels (botones, inputs, chips)
+  labelLarge: { fontFamily: Fonts.bold, fontSize: 16, lineHeight: 22 },
+  labelMedium: { fontFamily: Fonts.bold, fontSize: 14, lineHeight: 20 },
+  labelSmall: { fontFamily: Fonts.bold, fontSize: 12, lineHeight: 16, letterSpacing: 0.4, textTransform: 'uppercase' },
+
+  // Números (siempre tabulares)
+  numberLarge: { fontFamily: Fonts.extraBold, fontSize: 26, lineHeight: 32, ...TABULAR },
+  numberMedium: { fontFamily: Fonts.extraBold, fontSize: 24, lineHeight: 30, ...TABULAR },
+  numberSmall: { fontFamily: Fonts.extraBold, fontSize: 20, lineHeight: 26, ...TABULAR },
+  numberCounter: { fontFamily: Fonts.extraBold, fontSize: 56, lineHeight: 62, ...TABULAR },
+  numberHero: { fontFamily: Fonts.extraBold, fontSize: 72, lineHeight: 78, ...TABULAR },
 };
 
 export const Spacing = {
@@ -79,38 +111,49 @@ export const Spacing = {
 } as const;
 
 export const Radius = {
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 24,
+  sm: 12, // icon-tiles
+  md: 14, // botones / inputs
+  lg: 16, // cards
+  xl: 20, // cards grandes
   full: 9999,
 } as const;
 
+// Sombras casi planas: cards con borde 1px + sombra sutil; CTA primario más marcada
 export const Shadows = {
   sm: {
-    shadowColor: '#2C1810',
+    shadowColor: '#2A1F14',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
   },
   md: {
-    shadowColor: '#2C1810',
+    shadowColor: '#2A1F14',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
+    shadowOpacity: 0.06,
     shadowRadius: 6,
-    elevation: 3,
+    elevation: 2,
   },
   lg: {
-    shadowColor: '#2C1810',
+    shadowColor: '#2A1F14',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.08,
     shadowRadius: 12,
+    elevation: 3,
+  },
+  cta: {
+    shadowColor: '#6F4A26',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
     elevation: 6,
   },
 } as const;
 
 export const TOUCH_TARGET_MIN = 56;
+
+// Breakpoint tablet: >= 768px → sidebar lateral, layouts de dos paneles
+export const TABLET_BREAKPOINT = 768;
 
 export function getFamilyColor(family: string): string {
   switch (family.toLowerCase()) {
@@ -119,4 +162,9 @@ export function getFamilyColor(family: string): string {
     case 'navidad': return Colors.familyNavidad;
     default: return Colors.primaryLight;
   }
+}
+
+// Tinte al 25% para chips de familia (fondo suave del color de familia)
+export function getFamilyTint(family: string): string {
+  return getFamilyColor(family) + '40';
 }

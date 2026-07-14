@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text, type ViewStyle } from 'react-native';
 
-import { Colors, Radius, Spacing, TOUCH_TARGET_MIN, Typography } from '@/constants/theme';
+import { Colors, Radius, Shadows, Spacing, TOUCH_TARGET_MIN, Typography } from '@/constants/theme';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
 
@@ -34,6 +34,7 @@ export default function Button({ title, onPress, variant = 'primary', disabled, 
       style={({ pressed }) => [
         styles.base,
         { backgroundColor: BG[variant] },
+        variant === 'primary' && !disabled && Shadows.cta,
         variant === 'ghost' && styles.ghost,
         pressed && styles.pressed,
         disabled && styles.disabled,
@@ -56,8 +57,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   ghost: {
+    backgroundColor: Colors.bgCard,
     borderWidth: 1.5,
-    borderColor: Colors.primary,
+    borderColor: Colors.border,
   },
   pressed: {
     opacity: 0.85,

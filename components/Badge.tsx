@@ -11,9 +11,9 @@ interface Props {
 
 const COLORS: Record<Variant, { bg: string; text: string }> = {
   success: { bg: Colors.successLight, text: Colors.success },
-  warning: { bg: Colors.warningLight, text: '#E65100' },
+  warning: { bg: Colors.warningLight, text: Colors.warning },
   danger: { bg: Colors.dangerLight, text: Colors.danger },
-  info: { bg: Colors.infoLight, text: '#1565C0' },
+  info: { bg: Colors.infoLight, text: Colors.info },
   neutral: { bg: Colors.borderLight, text: Colors.textSecondary },
 };
 

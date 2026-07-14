@@ -10,7 +10,7 @@ interface Props {
   shadow?: 'sm' | 'md' | 'lg';
 }
 
-export default function Card({ children, onPress, style, shadow = 'md' }: Props) {
+export default function Card({ children, onPress, style, shadow = 'sm' }: Props) {
   const content = (
     <View style={[styles.card, Shadows[shadow], style]}>
       {children}
@@ -34,6 +34,8 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.bgCard,
     borderRadius: Radius.lg,
     padding: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
   },
   pressed: {
     opacity: 0.9,

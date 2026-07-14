@@ -1,6 +1,6 @@
-import { Pressable, ScrollView, StyleSheet, Text } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { Colors, Radius, Spacing, TOUCH_TARGET_MIN, Typography } from '@/constants/theme';
+import { Colors, Radius, Shadows, Spacing, Typography } from '@/constants/theme';
 
 interface FilterOption {
   key: string;
@@ -14,58 +14,69 @@ interface Props {
   onSelect: (key: string) => void;
 }
 
+/** Segmented control: pill blanca activa sobre track crema (rediseño v1) */
 export default function FilterPills({ options, selected, onSelect }: Props) {
   return (
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.container}
+      contentContainerStyle={styles.wrapper}
     >
-      {options.map((option) => {
-        const isActive = option.key === selected;
-        const activeColor = option.color ?? Colors.primary;
+      <View style={styles.track}>
+        {options.map((option) => {
+          const isActive = option.key === selected;
+          const activeColor = option.color ?? Colors.textPrimary;
 
-        return (
-          <Pressable
-            key={option.key}
-            onPress={() => onSelect(option.key)}
-            style={[
-              styles.pill,
-              isActive && { backgroundColor: activeColor, borderColor: activeColor },
-            ]}
-          >
-            <Text style={[styles.label, isActive && styles.labelActive]}>
-              {option.label}
-            </Text>
-          </Pressable>
-        );
-      })}
+          return (
+            <Pressable
+              key={option.key}
+              onPress={() => onSelect(option.key)}
+              style={({ pressed }) => [
+                styles.segment,
+                isActive && styles.segmentActive,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={[styles.label, isActive && { color: activeColor }]}>
+                {option.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
+  wrapper: {
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
   },
-  pill: {
-    minHeight: TOUCH_TARGET_MIN - 12,
+  track: {
+    flexDirection: 'row',
+    backgroundColor: '#EFE6D8',
+    borderRadius: Radius.full,
+    padding: 4,
+    gap: 2,
+  },
+  segment: {
+    height: 36,
     paddingHorizontal: Spacing.lg,
     borderRadius: Radius.full,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
-    backgroundColor: Colors.bgCard,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  label: {
-    ...Typography.labelSmall,
-    color: Colors.textSecondary,
+  segmentActive: {
+    backgroundColor: Colors.bgCard,
+    ...Shadows.sm,
   },
-  labelActive: {
-    color: Colors.textOnPrimary,
+  pressed: {
+    opacity: 0.85,
+  },
+  label: {
+    ...Typography.labelMedium,
+    fontSize: 13,
+    color: Colors.textSecondary,
   },
 });
