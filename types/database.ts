@@ -199,16 +199,19 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          is_active: boolean
           name: string
         }
         Insert: {
           created_at?: string
           id?: string
+          is_active?: boolean
           name: string
         }
         Update: {
           created_at?: string
           id?: string
+          is_active?: boolean
           name?: string
         }
         Relationships: []
@@ -443,6 +446,7 @@ export type Database = {
           id: string
           is_active: boolean
           is_custom: boolean | null
+          is_obrador: boolean
           leftovers_family: string | null
           name: string
           sale_price: number | null
@@ -454,6 +458,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           is_custom?: boolean | null
+          is_obrador?: boolean
           leftovers_family?: string | null
           name: string
           sale_price?: number | null
@@ -465,6 +470,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           is_custom?: boolean | null
+          is_obrador?: boolean
           leftovers_family?: string | null
           name?: string
           sale_price?: number | null

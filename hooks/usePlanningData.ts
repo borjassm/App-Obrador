@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
+import { compareFamilies } from '@/constants/families';
 import { supabase } from '@/lib/supabase';
 
 export interface ProductPlan {
@@ -117,15 +118,9 @@ export function usePlanningData() {
     }
 
     // Sort by family, then name
-    const familyOrder = ['panaderia', 'laminado', 'navidad'];
-    result.sort((a, b) => {
-      const ia = familyOrder.indexOf(a.family);
-      const ib = familyOrder.indexOf(b.family);
-      const fa = ia === -1 ? 999 : ia;
-      const fb = ib === -1 ? 999 : ib;
-      if (fa !== fb) return fa - fb;
-      return a.productName.localeCompare(b.productName);
-    });
+    result.sort(
+      (a, b) => compareFamilies(a.family, b.family) || a.productName.localeCompare(b.productName)
+    );
 
     setPlans(result);
     setLoading(false);

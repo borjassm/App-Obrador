@@ -1,3 +1,4 @@
+import { compareFamilies } from '@/constants/families';
 import { supabase } from '@/lib/supabase';
 
 export interface Product {
@@ -36,16 +37,7 @@ export const productService = {
       groups.get(family)!.push(product);
     }
 
-    // Sort families: panaderia first, then laminado, then navidad, then rest
-    const familyOrder = ['panaderia', 'laminado', 'navidad'];
-    const sorted = [...groups.entries()].sort(([a], [b]) => {
-      const ia = familyOrder.indexOf(a);
-      const ib = familyOrder.indexOf(b);
-      if (ia === -1 && ib === -1) return a.localeCompare(b);
-      if (ia === -1) return 1;
-      if (ib === -1) return -1;
-      return ia - ib;
-    });
+    const sorted = [...groups.entries()].sort(([a], [b]) => compareFamilies(a, b));
 
     return sorted.map(([family, products]) => ({ family, products }));
   },

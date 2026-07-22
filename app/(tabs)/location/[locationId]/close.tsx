@@ -1,13 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
-  LayoutAnimation,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  UIManager,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -15,6 +12,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 
 import Button from '@/components/Button';
+import CollapsibleSection, { configureCollapseAnimation } from '@/components/CollapsibleSection';
 import ConfirmSheet from '@/components/ConfirmSheet';
 import ProductCard from '@/components/ProductCard';
 import ProgressPill from '@/components/ProgressPill';
@@ -27,17 +25,11 @@ import {
   Spacing,
   TABLET_BREAKPOINT,
   Typography,
-  getFamilyColor,
   getFamilyTint,
 } from '@/constants/theme';
 import { getLocationDisplay } from '@/constants/locations';
 import { supabase } from '@/lib/supabase';
 import { useProductEntries } from '@/hooks/useProductEntries';
-
-// Animación de expandir/colapsar en Android (LayoutAnimation es experimental ahí)
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 type ChipState = 'idle' | 'saving' | 'saved';
 
@@ -123,12 +115,8 @@ export default function SobrantesScreen() {
   // Acordeón de familias: todas colapsadas por defecto
   const [expandedFamilies, setExpandedFamilies] = useState<Set<string>>(new Set());
 
-  const animateAccordion = () => {
-    LayoutAnimation.configureNext(LayoutAnimation.create(220, 'easeInEaseOut', 'opacity'));
-  };
-
   const toggleFamily = (family: string) => {
-    animateAccordion();
+    configureCollapseAnimation();
     setExpandedFamilies((prev) => {
       const next = new Set(prev);
       if (next.has(family)) {
@@ -147,7 +135,7 @@ export default function SobrantesScreen() {
     if (!product) return;
     setExpandedFamilies((prev) => {
       if (prev.has(product.family)) return prev;
-      animateAccordion();
+      configureCollapseAnimation();
       const next = new Set(prev);
       next.add(product.family);
       return next;
@@ -236,37 +224,18 @@ export default function SobrantesScreen() {
     />
   );
 
-  // Cabecera de familia del acordeón (compartida móvil / tablet)
-  const renderFamilyHeader = (group: (typeof groups)[number]) => {
-    const expanded = expandedFamilies.has(group.family);
+  // Props del acordeón de familia (CollapsibleSection, compartido móvil / tablet)
+  const familySectionProps = (group: (typeof groups)[number]) => {
     const registered = group.products.filter((p) => isFilled(p.id)).length;
     const total = group.products.length;
-    const complete = total > 0 && registered === total;
-    return (
-      <Pressable
-        onPress={() => toggleFamily(group.family)}
-        style={({ pressed }) => [styles.familyHeader, pressed && styles.familyHeaderPressed]}
-        accessibilityRole="button"
-        accessibilityState={{ expanded }}
-        accessibilityLabel={`${group.family}, registrados ${registered} de ${total}`}
-      >
-        <View style={[styles.familyBar, { backgroundColor: getFamilyColor(group.family) }]} />
-        <Text style={styles.familyName} numberOfLines={1}>
-          {group.family}
-        </Text>
-        <View style={styles.familyStatus}>
-          {complete && <MaterialIcons name="check-circle" size={16} color={Colors.success} />}
-          <Text style={[styles.familyStatusText, complete && styles.familyStatusDone]}>
-            registrados {registered}/{total}
-          </Text>
-        </View>
-        <MaterialIcons
-          name={expanded ? 'expand-less' : 'expand-more'}
-          size={24}
-          color={Colors.textSecondary}
-        />
-      </Pressable>
-    );
+    return {
+      title: group.family,
+      family: group.family,
+      meta: `registrados ${registered}/${total}`,
+      metaDone: total > 0 && registered === total,
+      expanded: expandedFamilies.has(group.family),
+      onToggle: () => toggleFamily(group.family),
+    };
   };
 
   if (loading) {
@@ -292,28 +261,23 @@ export default function SobrantesScreen() {
         </View>
 
         {groups.map((group) => (
-          <View key={group.family} style={styles.group}>
-            {renderFamilyHeader(group)}
-            {expandedFamilies.has(group.family) && (
-              <View style={styles.productList}>
-                {group.products.map((product) => {
-                  const entry = entries.get(product.id);
-                  return (
-                    <ProductCard
-                      key={product.id}
-                      name={product.name}
-                      family={product.family}
-                      savedQty={entry?.savedQty}
-                      discardedQty={entry?.discardedQty}
-                      onPress={() =>
-                        router.push(`/(tabs)/location/${locationId}/product/${product.id}`)
-                      }
-                    />
-                  );
-                })}
-              </View>
-            )}
-          </View>
+          <CollapsibleSection key={group.family} {...familySectionProps(group)}>
+            {group.products.map((product) => {
+              const entry = entries.get(product.id);
+              return (
+                <ProductCard
+                  key={product.id}
+                  name={product.name}
+                  family={product.family}
+                  savedQty={entry?.savedQty}
+                  discardedQty={entry?.discardedQty}
+                  onPress={() =>
+                    router.push(`/(tabs)/location/${locationId}/product/${product.id}`)
+                  }
+                />
+              );
+            })}
+          </CollapsibleSection>
         ))}
 
         {!isClosed && totalCount > 0 && (
@@ -368,27 +332,22 @@ export default function SobrantesScreen() {
             showsVerticalScrollIndicator={false}
           >
             {groups.map((group) => (
-              <View key={group.family} style={styles.group}>
-                {renderFamilyHeader(group)}
-                {expandedFamilies.has(group.family) && (
-                  <View style={styles.productList}>
-                    {group.products.map((product) => {
-                      const entry = entries.get(product.id);
-                      return (
-                        <ProductCard
-                          key={product.id}
-                          name={product.name}
-                          family={product.family}
-                          savedQty={entry?.savedQty}
-                          discardedQty={entry?.discardedQty}
-                          selected={product.id === selectedProductId}
-                          onPress={() => setSelectedProductId(product.id)}
-                        />
-                      );
-                    })}
-                  </View>
-                )}
-              </View>
+              <CollapsibleSection key={group.family} {...familySectionProps(group)}>
+                {group.products.map((product) => {
+                  const entry = entries.get(product.id);
+                  return (
+                    <ProductCard
+                      key={product.id}
+                      name={product.name}
+                      family={product.family}
+                      savedQty={entry?.savedQty}
+                      discardedQty={entry?.discardedQty}
+                      selected={product.id === selectedProductId}
+                      onPress={() => setSelectedProductId(product.id)}
+                    />
+                  );
+                })}
+              </CollapsibleSection>
             ))}
           </ScrollView>
 
@@ -503,52 +462,6 @@ const styles = StyleSheet.create({
   hint: {
     ...Typography.bodySmall,
     color: Colors.textMuted,
-  },
-  group: {
-    marginBottom: Spacing.md,
-  },
-  familyHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-    minHeight: 56,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-    backgroundColor: Colors.bgCard,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-  },
-  familyHeaderPressed: {
-    opacity: 0.85,
-  },
-  familyBar: {
-    width: 8,
-    height: 28,
-    borderRadius: Radius.full,
-  },
-  familyName: {
-    ...Typography.headingSmall,
-    color: Colors.textPrimary,
-    textTransform: 'capitalize',
-    flex: 1,
-  },
-  familyStatus: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.xs,
-  },
-  familyStatusText: {
-    ...Typography.meta,
-    fontVariant: ['tabular-nums'],
-  },
-  familyStatusDone: {
-    color: Colors.success,
-    fontFamily: Fonts.bold,
-  },
-  productList: {
-    gap: Spacing.sm,
-    paddingTop: Spacing.sm,
   },
   mobileFooter: {
     paddingTop: Spacing.xl,
