@@ -161,8 +161,9 @@ export default function TabsLayout() {
 
       {/* Hidden utility routes */}
       <Tabs.Screen name="import-erp" options={{ href: null }} />
-      {/* Costes: accesible desde Ajustes hasta la reorganización de pestañas */}
+      {/* Costes y Ventas: accesibles desde Ajustes hasta la reorganización de pestañas */}
       <Tabs.Screen name="costes/index" options={{ href: null }} />
+      <Tabs.Screen name="ventas/index" options={{ href: null }} />
     </Tabs>
   );
 }

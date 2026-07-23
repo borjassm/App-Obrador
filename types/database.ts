@@ -649,6 +649,22 @@ export type Database = {
         Args: { p_start: string; p_end: string; p_limit?: number }
         Returns: { product_id: string; name: string; family: string; units: number; revenue: number; unit_cost: number; est_margin: number; margin_pct: number }[]
       }
+      sales_period_summary: {
+        Args: { p_start: string; p_end: string; p_location?: string | null }
+        Returns: { total_revenue: number; total_units: number; active_products: number; days_with_sales: number; avg_daily_revenue: number }[]
+      }
+      sales_period_series: {
+        Args: { p_start: string; p_end: string; p_location?: string | null }
+        Returns: { sale_date: string; revenue: number; units: number }[]
+      }
+      sales_period_products: {
+        Args: { p_start: string; p_end: string; p_location?: string | null; p_limit?: number }
+        Returns: { product_id: string; name: string; family: string; units: number; revenue: number; avg_units_per_day: number; revenue_share: number }[]
+      }
+      sales_first_date: {
+        Args: Record<string, never>
+        Returns: string | null
+      }
       planning_suggestions: {
         Args: { p_date: string }
         Returns: { product_id: string; name: string; family: string; suggested_qty: number; base_recent: number; base_hist: number; carryover: number; trend_weight: number; confidence: string; samples: number }[]
