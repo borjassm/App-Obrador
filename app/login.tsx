@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import {
   Alert,
-  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -160,40 +159,41 @@ export default function LoginScreen() {
           </View>
         </View>
 
-        {/* Panel derecho — formulario */}
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.formPanel}
+        {/* Panel derecho — formulario. Sin KeyboardAvoidingView: su salto de
+            layout en iOS hacía perder el foco y cerraba el teclado al instante;
+            automaticallyAdjustKeyboardInsets es el manejo nativo de UIKit. */}
+        <ScrollView
+          style={styles.formPanelScroll}
+          contentContainerStyle={styles.formPanel}
+          keyboardShouldPersistTaps="handled"
+          bounces={false}
+          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
         >
           {form}
-        </KeyboardAvoidingView>
+        </ScrollView>
       </View>
     );
   }
 
   return (
     <View style={styles.mobileRoot}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardView}
+      <ScrollView
+        contentContainerStyle={styles.mobileScroll}
+        keyboardShouldPersistTaps="handled"
+        bounces={false}
+        automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
       >
-        <ScrollView
-          contentContainerStyle={styles.mobileScroll}
-          keyboardShouldPersistTaps="handled"
-          bounces={false}
-        >
-          {/* Branding compacto */}
-          <View style={styles.mobileBrand}>
-            <View style={styles.brandRow}>
-              <LogoTile />
-              <Text style={styles.wordmark}>Obrador</Text>
-            </View>
-            <Text style={styles.mobileClaim}>El día a día de tu obrador, bajo control.</Text>
+        {/* Branding compacto */}
+        <View style={styles.mobileBrand}>
+          <View style={styles.brandRow}>
+            <LogoTile />
+            <Text style={styles.wordmark}>Obrador</Text>
           </View>
+          <Text style={styles.mobileClaim}>El día a día de tu obrador, bajo control.</Text>
+        </View>
 
-          <View style={styles.mobileFormCard}>{form}</View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        <View style={styles.mobileFormCard}>{form}</View>
+      </ScrollView>
     </View>
   );
 }
@@ -239,8 +239,11 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     color: 'rgba(246, 241, 233, 0.6)',
   },
-  formPanel: {
+  formPanelScroll: {
     flex: 1,
+  },
+  formPanel: {
+    flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: Spacing.xxl,
@@ -250,9 +253,6 @@ const styles = StyleSheet.create({
   mobileRoot: {
     flex: 1,
     backgroundColor: Colors.bgDark,
-  },
-  keyboardView: {
-    flex: 1,
   },
   mobileScroll: {
     flexGrow: 1,
