@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { router } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 
@@ -155,9 +155,13 @@ export default function HomeTab() {
             </Text>
           </View>
         ) : (
-          <View style={styles.avatar}>
+          <Pressable
+            onPress={() => router.push('/(tabs)/settings')}
+            accessibilityLabel="Ajustes"
+            style={({ pressed }) => [styles.avatar, pressed && styles.avatarPressed]}
+          >
             <Text style={styles.avatarText}>{initials(userName)}</Text>
-          </View>
+          </Pressable>
         )}
       </View>
 
@@ -304,6 +308,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.secondary,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  avatarPressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.98 }],
   },
   avatarText: {
     fontFamily: Fonts.extraBold,

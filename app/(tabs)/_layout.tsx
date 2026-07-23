@@ -17,13 +17,13 @@ const TAB_ICONS: Record<string, TabIcon> = {
     label: 'Inicio',
     render: (color, size) => <MaterialIcons name="home" size={size} color={color} />,
   },
-  'stock/index': {
-    label: 'Stock',
-    render: (color, size) => <MaterialIcons name="inventory-2" size={size} color={color} />,
-  },
-  'production/index': {
-    label: 'Producción',
+  obrador: {
+    label: 'Obrador',
     render: (color, size) => <MaterialCommunityIcons name="stove" size={size} color={color} />,
+  },
+  'ventas/index': {
+    label: 'Ventas',
+    render: (color, size) => <MaterialIcons name="point-of-sale" size={size} color={color} />,
   },
   'dashboard/index': {
     label: 'Analítica',
@@ -33,6 +33,11 @@ const TAB_ICONS: Record<string, TabIcon> = {
     label: 'Plan',
     render: (color, size) => <MaterialIcons name="event-note" size={size} color={color} />,
   },
+  'costes/index': {
+    label: 'Costes',
+    render: (color, size) => <MaterialIcons name="euro" size={size} color={color} />,
+  },
+  // Ajustes no va en la barra móvil (avatar de Inicio); en tablet, pie del rail
   'settings/index': {
     label: 'Ajustes',
     render: (color, size) => <MaterialIcons name="settings" size={size} color={color} />,
@@ -117,9 +122,9 @@ function SideRail(props: BottomTabBarProps) {
   );
 }
 
-/** Tab bar inferior (móvil < 768px) */
+/** Tab bar inferior (móvil < 768px). Ajustes queda fuera (avatar de Inicio). */
 function MobileTabBar(props: BottomTabBarProps) {
-  const items = useTabItems(props);
+  const items = useTabItems(props).filter((item) => item.name !== 'settings/index');
 
   return (
     <View style={[styles.tabBar, { paddingBottom: props.insets.bottom + 8 }]}>
@@ -150,10 +155,11 @@ export default function TabsLayout() {
       }}
     >
       <Tabs.Screen name="index" options={{ title: 'Inicio' }} />
-      <Tabs.Screen name="stock/index" options={{ title: 'Stock' }} />
-      <Tabs.Screen name="production/index" options={{ title: 'Producción' }} />
+      <Tabs.Screen name="obrador" options={{ title: 'Obrador' }} />
+      <Tabs.Screen name="ventas/index" options={{ title: 'Ventas' }} />
       <Tabs.Screen name="dashboard/index" options={{ title: 'Analítica' }} />
       <Tabs.Screen name="planning/index" options={{ title: 'Plan' }} />
+      <Tabs.Screen name="costes/index" options={{ title: 'Costes' }} />
       <Tabs.Screen name="settings/index" options={{ title: 'Ajustes' }} />
 
       {/* Hide location routes from tab bar — accessed via navigation */}
@@ -161,9 +167,6 @@ export default function TabsLayout() {
 
       {/* Hidden utility routes */}
       <Tabs.Screen name="import-erp" options={{ href: null }} />
-      {/* Costes y Ventas: accesibles desde Ajustes hasta la reorganización de pestañas */}
-      <Tabs.Screen name="costes/index" options={{ href: null }} />
-      <Tabs.Screen name="ventas/index" options={{ href: null }} />
     </Tabs>
   );
 }

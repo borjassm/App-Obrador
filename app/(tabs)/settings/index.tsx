@@ -63,26 +63,6 @@ export default function SettingsTab() {
         </View>
         <MaterialIcons name="chevron-right" size={24} color={Colors.textMuted} />
       </Card>
-      <Card style={styles.dataCard} onPress={() => router.push('/(tabs)/costes')}>
-        <View style={styles.dataIconTile}>
-          <MaterialIcons name="euro" size={24} color={Colors.primary} />
-        </View>
-        <View style={styles.userInfo}>
-          <Text style={styles.userEmail}>Costes y márgenes</Text>
-          <Text style={styles.userRole}>Precio, coste unitario y margen por producto · importación CSV/Excel</Text>
-        </View>
-        <MaterialIcons name="chevron-right" size={24} color={Colors.textMuted} />
-      </Card>
-      <Card style={styles.dataCard} onPress={() => router.push('/(tabs)/ventas')}>
-        <View style={styles.dataIconTile}>
-          <MaterialIcons name="point-of-sale" size={24} color={Colors.primary} />
-        </View>
-        <View style={styles.userInfo}>
-          <Text style={styles.userEmail}>Ventas por periodo</Text>
-          <Text style={styles.userRole}>Último día, semana, mes, año o todo el historial · por ubicación</Text>
-        </View>
-        <MaterialIcons name="chevron-right" size={24} color={Colors.textMuted} />
-      </Card>
 
       {/* App info */}
       <Text style={styles.sectionLabel}>Aplicación</Text>
