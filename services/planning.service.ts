@@ -26,6 +26,19 @@ export interface AccuracyStats {
   hit_rate: number;
 }
 
+export interface PipelinePlanRow {
+  plan_date: string;
+  product_id: string;
+  suggested_qty: number;
+  override_qty: number | null;
+  phase: string;
+  nave_qty: number;
+  tienda_qty: number;
+  confidence: string;
+  weather_factor: number;
+  holiday_factor: number;
+}
+
 export const planningService = {
   /** Sugerencias calculadas por el motor (día de la semana + pesos por producto). */
   async suggestions(dateISO: string): Promise<Suggestion[]> {
@@ -61,6 +74,58 @@ export const planningService = {
       })),
       { onConflict: 'plan_date,product_id' }
     );
+  },
+
+  /** Overrides guardados de varias fechas, con clave `${plan_date}_${product_id}`. */
+  async savedPlans(datesISO: string[]): Promise<Map<string, number>> {
+    const { data } = await supabase
+      .from('production_plans')
+      .select('plan_date, product_id, override_qty')
+      .in('plan_date', datesISO);
+    const map = new Map<string, number>();
+    for (const row of data ?? []) {
+      if (row.override_qty != null) map.set(`${row.plan_date}_${row.product_id}`, row.override_qty);
+    }
+    return map;
+  },
+
+  /** Guarda el plan del pipeline (varias fechas de venta, con fase y factores). */
+  async savePipelinePlan(rows: PipelinePlanRow[]) {
+    const now = new Date().toISOString();
+    const payload = rows.map((r) => ({
+      ...r,
+      override_at: r.override_qty != null ? now : null,
+    }));
+    for (let i = 0; i < payload.length; i += 50) {
+      const { error } = await supabase
+        .from('production_plans')
+        .upsert(payload.slice(i, i + 50), { onConflict: 'plan_date,product_id' });
+      if (error) return { error };
+    }
+    return { error: null };
+  },
+
+  /** Días de proceso por producto (product_process_config). */
+  async processConfig(): Promise<Map<string, number>> {
+    const { data } = await supabase
+      .from('product_process_config')
+      .select('product_id, process_days');
+    return new Map((data ?? []).map((r) => [r.product_id, r.process_days]));
+  },
+
+  async setProcessDays(productId: string, processDays: number) {
+    return supabase
+      .from('product_process_config')
+      .upsert(
+        { product_id: productId, process_days: processDays, updated_at: new Date().toISOString() },
+        { onConflict: 'product_id' }
+      );
+  },
+
+  /** Cuota histórica de la Nave por producto (para repartir Nave/Tienda). */
+  async locationSplit(): Promise<Map<string, number>> {
+    const { data } = await supabase.rpc('planning_location_split');
+    return new Map((data ?? []).map((r) => [r.product_id, Number(r.nave_share)]));
   },
 
   /** Cierra el ciclo de mejora continua: registra aciertos y ajusta pesos. */

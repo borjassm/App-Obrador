@@ -677,6 +677,10 @@ export type Database = {
         Args: { p_days?: number }
         Returns: { n: number; mape: number; hit_rate: number }[]
       }
+      planning_location_split: {
+        Args: Record<string, never>
+        Returns: { product_id: string; nave_share: number }[]
+      }
     }
     Enums: {
       [_ in never]: never

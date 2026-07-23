@@ -1,142 +1,107 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 
 import Badge from '@/components/Badge';
 import Button from '@/components/Button';
 import Card from '@/components/Card';
-import FilterPills from '@/components/FilterPills';
+import CollapsibleSection, { configureCollapseAnimation } from '@/components/CollapsibleSection';
+import SectionHeader from '@/components/SectionHeader';
 import Stepper from '@/components/Stepper';
 import { Screen } from '@/components/Screen';
-import { Colors, Fonts, Radius, Shadows, Spacing, Typography, getFamilyColor } from '@/constants/theme';
-import { supabase } from '@/lib/supabase';
-import { analyticsService } from '@/services/analytics.service';
-import { planningService, type AccuracyStats, type Suggestion } from '@/services/planning.service';
+import { compareFamilies } from '@/constants/families';
+import { Colors, Fonts, Radius, Shadows, Spacing, Typography } from '@/constants/theme';
+import { PHASE_ORDER, type Phase } from '@/features/planning/pipelineScheduler';
+import { usePipelinePlanning, type PipelineItem } from '@/hooks/usePipelinePlanning';
 
 const WEEKDAY_LABELS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+const SALE_DAY_LABEL = ['hoy', 'mañana', 'pasado mañana'];
 
-function iso(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+const PHASE_CONFIG: Record<
+  Phase,
+  { title: string; detail: string; color: string }
+> = {
+  horneado: { title: 'Hornear', detail: 'se vende hoy', color: Colors.primary },
+  fermentacion: { title: 'Fermentar', detail: 'se vende mañana', color: Colors.secondary },
+  amasado: { title: 'Amasar', detail: 'se vende mañana o pasado', color: Colors.familyPanaderia },
+};
 
-function dateWithOffset(days: number): Date {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d;
-}
-
-interface PlanItem extends Suggestion {
-  finalQty: number;       // sugerido u override del usuario
-  overridden: boolean;
+function factorLabel(value: number): string {
+  return `×${value.toLocaleString('es-ES', { maximumFractionDigits: 2 })}`;
 }
 
 export default function PlanningTab() {
-  const [offset, setOffset] = useState<'1' | '2' | '0'>('1'); // mañana por defecto
-  const [items, setItems] = useState<PlanItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [savedAt, setSavedAt] = useState<string | null>(null);
-  const [accuracy, setAccuracy] = useState<AccuracyStats | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const {
+    todayISO,
+    pipeline,
+    summary,
+    loading,
+    saving,
+    accuracy,
+    weatherToday,
+    holidayToday,
+    setOverride,
+    clearOverride,
+    setProcessDays,
+    saveAll,
+  } = usePipelinePlanning();
+
+  const [collapsedPhases, setCollapsedPhases] = useState<Set<Phase>>(new Set());
+  const [editingKey, setEditingKey] = useState<string | null>(null);
   const [draftQty, setDraftQty] = useState(0);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
 
-  const targetDate = useMemo(() => dateWithOffset(parseInt(offset, 10)), [offset]);
-  const targetISO = iso(targetDate);
-  const weekdayName = WEEKDAY_LABELS[targetDate.getDay()];
+  const todayDate = useMemo(() => new Date(todayISO + 'T12:00:00'), [todayISO]);
+  const weekdayName = WEEKDAY_LABELS[todayDate.getDay()];
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setSavedAt(null);
-    setEditingId(null);
-    try {
-      // Cerrar el ciclo de mejora continua para planes pasados con ventas ya cargadas
-      const latest = await analyticsService.latestDates();
-      if (latest?.latest_sale) {
-        const { data: pastPlans } = await supabase
-          .from('production_plans')
-          .select('plan_date')
-          .lte('plan_date', latest.latest_sale)
-          .order('plan_date', { ascending: false })
-          .limit(60);
-        const uniqueDates = [...new Set((pastPlans ?? []).map((p) => p.plan_date))].slice(0, 10);
-        for (const d of uniqueDates) await planningService.recordAccuracy(d);
+  const togglePhase = (phase: Phase) => {
+    configureCollapseAnimation();
+    setCollapsedPhases((prev) => {
+      const next = new Set(prev);
+      if (next.has(phase)) {
+        next.delete(phase);
+      } else {
+        next.add(phase);
       }
+      return next;
+    });
+  };
 
-      const [suggestions, saved, stats] = await Promise.all([
-        planningService.suggestions(targetISO),
-        planningService.savedPlan(targetISO),
-        planningService.accuracyStats(90),
-      ]);
+  const itemKey = (item: PipelineItem) => `${item.sellDate}_${item.productId}`;
 
-      setItems(
-        suggestions.map((s) => {
-          const savedRow = saved.get(s.product_id);
-          const overridden = savedRow?.override_qty != null;
-          return {
-            ...s,
-            finalQty: overridden ? (savedRow!.override_qty as number) : s.suggested_qty,
-            overridden,
-          };
-        })
-      );
-      setAccuracy(stats);
-    } catch (e) {
-      console.log('[PlanningTab] error:', e);
-      setItems([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [targetISO]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  const totalUnits = items.reduce((s, i) => s + i.finalQty, 0);
-  const editedCount = items.filter((i) => i.overridden).length;
-
-  const groups = useMemo(() => {
-    const map = new Map<string, PlanItem[]>();
-    for (const item of items) {
-      if (!map.has(item.family)) map.set(item.family, []);
-      map.get(item.family)!.push(item);
-    }
-    return [...map.entries()];
-  }, [items]);
-
-  const openEdit = (item: PlanItem) => {
-    if (editingId === item.product_id) {
-      setEditingId(null);
+  const openEdit = (item: PipelineItem) => {
+    const key = itemKey(item);
+    if (editingKey === key) {
+      setEditingKey(null);
       return;
     }
-    setEditingId(item.product_id);
-    setDraftQty(item.finalQty);
+    setEditingKey(key);
+    setDraftQty(item.effectiveQty);
   };
 
-  const applyEdit = () => {
-    if (!editingId) return;
-    setItems((prev) =>
-      prev.map((i) =>
-        i.product_id === editingId
-          ? { ...i, finalQty: draftQty, overridden: draftQty !== i.suggested_qty }
-          : i
-      )
-    );
-    setEditingId(null);
+  const applyEdit = (item: PipelineItem) => {
+    if (draftQty === item.suggestedQty) {
+      clearOverride(item.sellDate, item.productId);
+    } else {
+      setOverride(item.sellDate, item.productId, draftQty);
+    }
+    setEditingKey(null);
   };
 
-  const savePlan = async () => {
-    setSaving(true);
-    const { error } = await planningService.savePlan(
-      targetISO,
-      items.map((i) => ({
-        product_id: i.product_id,
-        suggested_qty: i.suggested_qty,
-        override_qty: i.overridden ? i.finalQty : null,
-        confidence: i.confidence,
-      }))
-    );
-    setSaving(false);
+  const resetOverride = (item: PipelineItem) => {
+    clearOverride(item.sellDate, item.productId);
+    setEditingKey(null);
+  };
+
+  const changeProcessDays = async (item: PipelineItem, days: number) => {
+    if (days === item.processDays) return;
+    setEditingKey(null);
+    const { error } = await setProcessDays(item.productId, days);
+    if (error) Alert.alert('Error', 'No se pudo cambiar los días de proceso.');
+  };
+
+  const handleSave = async () => {
+    const { error } = await saveAll();
     if (error) {
       Alert.alert('Error', 'No se pudo guardar el plan. Inténtalo de nuevo.');
     } else {
@@ -144,11 +109,145 @@ export default function PlanningTab() {
     }
   };
 
+  const totalItems =
+    pipeline.horneado.length + pipeline.fermentacion.length + pipeline.amasado.length;
+
   const summaryLine =
-    `${items.length} productos · ${totalUnits.toLocaleString('es-ES')} uds totales` +
-    (editedCount > 0
-      ? ` · ${editedCount} ${editedCount === 1 ? 'ajustado' : 'ajustados'} por ti`
+    `${summary.totalProducts} productos · ${summary.totalUnits.toLocaleString('es-ES')} uds en 3 fechas` +
+    (summary.overrideCount > 0
+      ? ` · ${summary.overrideCount} ${summary.overrideCount === 1 ? 'ajustado' : 'ajustados'} por ti`
       : '');
+
+  const renderItem = (item: PipelineItem) => {
+    const key = itemKey(item);
+    const isEditing = editingKey === key;
+    const factors: string[] = [];
+    if (item.weatherFactor !== 1) factors.push(`clima ${factorLabel(item.weatherFactor)}`);
+    if (item.holidayFactor !== 1) factors.push(`festivo ${factorLabel(item.holidayFactor)}`);
+
+    return (
+      <Card key={key} style={styles.rowCard} shadow="sm">
+        <View style={styles.row}>
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowName} numberOfLines={1}>{item.name}</Text>
+            <Text style={styles.rowExplain} numberOfLines={2}>
+              Vende {SALE_DAY_LABEL[item.daysUntilSale]} · sugerido {item.suggestedQty}
+              {factors.length > 0 ? ` · ${factors.join(' · ')}` : ''}
+              {item.familyAdjusted ? ' · reducido por ajuste de su familia' : ''}
+            </Text>
+          </View>
+          <Badge
+            label={item.confidence === 'high' ? 'Alta' : item.confidence === 'medium' ? 'Media' : 'Baja'}
+            variant={item.confidence === 'high' ? 'success' : item.confidence === 'medium' ? 'warning' : 'neutral'}
+          />
+          <View style={styles.qtyBox}>
+            <Text style={[styles.qtyNum, item.overrideQty != null && styles.qtyNumAdjusted]}>
+              {item.effectiveQty}
+            </Text>
+            <Text style={[styles.qtyLabel, item.overrideQty != null && styles.qtyLabelAdjusted]}>
+              {item.overrideQty != null ? 'ajustado' : item.familyAdjusted ? 'familia' : 'sugerido'}
+            </Text>
+          </View>
+          <Pressable
+            onPress={() => openEdit(item)}
+            style={({ pressed }) => [
+              styles.editBtn,
+              isEditing && styles.editBtnActive,
+              pressed && styles.pressed,
+            ]}
+          >
+            <MaterialIcons
+              name={isEditing ? 'close' : 'edit'}
+              size={22}
+              color={isEditing ? Colors.textOnPrimary : Colors.primary}
+            />
+          </Pressable>
+        </View>
+
+        {isEditing && (
+          <View style={styles.editArea}>
+            <Text style={styles.editHint}>
+              Sugerido: {item.suggestedQty} uds · reparto {item.naveQty} Nave / {item.tiendaQty} Tienda
+            </Text>
+            <Stepper value={draftQty} onChange={setDraftQty} min={0} color={Colors.secondary} />
+            <View style={styles.processRow}>
+              <Text style={styles.processLabel}>Proceso</Text>
+              {[1, 2, 3].map((d) => (
+                <Pressable
+                  key={d}
+                  onPress={() => changeProcessDays(item, d)}
+                  style={({ pressed }) => [
+                    styles.processPill,
+                    item.processDays === d && styles.processPillActive,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.processPillText,
+                      item.processDays === d && styles.processPillTextActive,
+                    ]}
+                  >
+                    {d} {d === 1 ? 'día' : 'días'}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <View style={styles.editActions}>
+              {item.overrideQty != null && (
+                <Button
+                  title="Resetear"
+                  variant="ghost"
+                  onPress={() => resetOverride(item)}
+                  style={styles.editActionBtn}
+                />
+              )}
+              <Button
+                title="Cancelar"
+                variant="ghost"
+                onPress={() => setEditingKey(null)}
+                style={styles.editActionBtn}
+              />
+              <Button title="Aplicar" onPress={() => applyEdit(item)} style={styles.editActionBtn} />
+            </View>
+          </View>
+        )}
+      </Card>
+    );
+  };
+
+  const renderPhase = (phase: Phase) => {
+    const config = PHASE_CONFIG[phase];
+    const phaseItems = pipeline[phase];
+    if (phaseItems.length === 0) return null;
+
+    const units = summary.unitsByPhase[phase];
+    const families = new Map<string, PipelineItem[]>();
+    for (const item of phaseItems) {
+      if (!families.has(item.family)) families.set(item.family, []);
+      families.get(item.family)!.push(item);
+    }
+    const sortedFamilies = [...families.entries()].sort(([a], [b]) => compareFamilies(a, b));
+
+    return (
+      <View key={phase} style={styles.phaseBlock}>
+        <CollapsibleSection
+          title={`${config.title} · ${config.detail}`}
+          color={config.color}
+          meta={`${phaseItems.length} prod · ${units.toLocaleString('es-ES')} uds`}
+          expanded={!collapsedPhases.has(phase)}
+          onToggle={() => togglePhase(phase)}
+        >
+          {sortedFamilies.map(([family, familyItems]) => (
+            <View key={family}>
+              <SectionHeader title={family} family={family} count={familyItems.length} />
+              <View style={styles.familyList}>{familyItems.map(renderItem)}</View>
+            </View>
+          ))}
+        </CollapsibleSection>
+      </View>
+    );
+  };
 
   return (
     <Screen noPadding>
@@ -159,20 +258,34 @@ export default function PlanningTab() {
       >
         <View style={styles.header}>
           <Text style={styles.subtitle}>
-            Sugerencias para el {weekdayName} {targetDate.getDate()}/{targetDate.getMonth() + 1}, según tu histórico de ventas
+            Trabajo de hoy, {weekdayName} {todayDate.getDate()}/{todayDate.getMonth() + 1} — qué
+            hornear, fermentar y amasar según la venta prevista
           </Text>
-          <Text style={styles.title}>Planificación</Text>
+          <Text style={styles.title}>Plan de producción</Text>
         </View>
 
-        <FilterPills
-          options={[
-            { key: '0', label: 'Hoy' },
-            { key: '1', label: 'Mañana' },
-            { key: '2', label: 'Pasado' },
-          ]}
-          selected={offset}
-          onSelect={(k) => setOffset(k as '0' | '1' | '2')}
-        />
+        {/* Contexto del día: clima y festivos */}
+        {(weatherToday || holidayToday?.reason) && (
+          <View style={styles.chipsRow}>
+            {weatherToday && (
+              <View style={styles.contextChip}>
+                <MaterialIcons name="thermostat" size={16} color={Colors.textSecondary} />
+                <Text style={styles.contextChipText}>
+                  {Math.round(weatherToday.day.tempMax)}° · {weatherToday.day.precipitation.toLocaleString('es-ES')} mm
+                  {weatherToday.factor !== 1 ? ` · demanda ${factorLabel(weatherToday.factor)}` : ''}
+                </Text>
+              </View>
+            )}
+            {holidayToday?.reason && (
+              <View style={[styles.contextChip, styles.contextChipWarning]}>
+                <MaterialIcons name="event" size={16} color={Colors.warning} />
+                <Text style={[styles.contextChipText, { color: Colors.warning }]}>
+                  {holidayToday.reason} · demanda {factorLabel(holidayToday.factor)}
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
 
         {/* Precisión del modelo */}
         <View style={styles.accuracyCard}>
@@ -196,12 +309,27 @@ export default function PlanningTab() {
           )}
         </View>
 
+        {/* Resumen por fase */}
+        {!loading && totalItems > 0 && (
+          <View style={styles.phaseSummaryRow}>
+            {PHASE_ORDER.map((phase) => (
+              <View key={phase} style={styles.phaseSummaryCard}>
+                <View style={[styles.phaseDot, { backgroundColor: PHASE_CONFIG[phase].color }]} />
+                <Text style={styles.phaseSummaryValue}>
+                  {summary.unitsByPhase[phase].toLocaleString('es-ES')}
+                </Text>
+                <Text style={styles.phaseSummaryLabel}>{PHASE_CONFIG[phase].title}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
         {loading ? (
           <View style={styles.stateBox}>
             <MaterialIcons name="hourglass-empty" size={48} color={Colors.textMuted} />
-            <Text style={styles.stateText}>Calculando sugerencias…</Text>
+            <Text style={styles.stateText}>Calculando el pipeline…</Text>
           </View>
-        ) : items.length === 0 ? (
+        ) : totalItems === 0 ? (
           <View style={styles.stateBox}>
             <MaterialIcons name="event-note" size={48} color={Colors.textMuted} />
             <Text style={styles.stateText}>
@@ -209,76 +337,12 @@ export default function PlanningTab() {
             </Text>
           </View>
         ) : (
-          groups.map(([family, groupItems]) => (
-            <View key={family} style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <View style={[styles.sectionDot, { backgroundColor: getFamilyColor(family) }]} />
-                <Text style={styles.sectionLabel}>{family}</Text>
-              </View>
-
-              {groupItems.map((item) => {
-                const isEditing = editingId === item.product_id;
-                return (
-                  <Card key={item.product_id} style={styles.rowCard} shadow="sm">
-                    <View style={styles.row}>
-                      <View style={styles.rowInfo}>
-                        <Text style={styles.rowName} numberOfLines={1}>{item.name}</Text>
-                        <Text style={styles.rowExplain} numberOfLines={2}>
-                          Media {weekdayName}: reciente {item.base_recent} · histórica {item.base_hist}
-                          {item.carryover > 0 ? ` · guardado ayer ${item.carryover}` : ''}
-                        </Text>
-                      </View>
-                      <Badge
-                        label={item.confidence === 'high' ? 'Alta' : item.confidence === 'medium' ? 'Media' : 'Baja'}
-                        variant={item.confidence === 'high' ? 'success' : item.confidence === 'medium' ? 'warning' : 'neutral'}
-                      />
-                      <View style={styles.qtyBox}>
-                        <Text style={[styles.qtyNum, item.overridden && styles.qtyNumAdjusted]}>
-                          {item.finalQty}
-                        </Text>
-                        <Text style={[styles.qtyLabel, item.overridden && styles.qtyLabelAdjusted]}>
-                          {item.overridden ? 'ajustado' : 'sugerido'}
-                        </Text>
-                      </View>
-                      <Pressable
-                        onPress={() => openEdit(item)}
-                        style={({ pressed }) => [
-                          styles.editBtn,
-                          isEditing && styles.editBtnActive,
-                          pressed && styles.pressed,
-                        ]}
-                      >
-                        <MaterialIcons
-                          name={isEditing ? 'close' : 'edit'}
-                          size={22}
-                          color={isEditing ? Colors.textOnPrimary : Colors.primary}
-                        />
-                      </Pressable>
-                    </View>
-
-                    {/* Edición inline */}
-                    {isEditing && (
-                      <View style={styles.editArea}>
-                        <Text style={styles.editHint}>
-                          Sugerido por el modelo: {item.suggested_qty} uds
-                        </Text>
-                        <Stepper value={draftQty} onChange={setDraftQty} min={0} color={Colors.secondary} />
-                        <View style={styles.editActions}>
-                          <Button title="Cancelar" variant="ghost" onPress={() => setEditingId(null)} style={styles.editActionBtn} />
-                          <Button title="Aplicar" onPress={applyEdit} style={styles.editActionBtn} />
-                        </View>
-                      </View>
-                    )}
-                  </Card>
-                );
-              })}
-            </View>
-          ))
+          <View style={styles.phases}>{PHASE_ORDER.map(renderPhase)}</View>
         )}
       </ScrollView>
 
       {/* Footer fijo */}
-      {!loading && items.length > 0 && (
+      {!loading && totalItems > 0 && (
         <View style={styles.footer}>
           <View style={styles.footerInfo}>
             <Text style={styles.totalLine} numberOfLines={2}>{summaryLine}</Text>
@@ -290,7 +354,7 @@ export default function PlanningTab() {
             )}
           </View>
           <Pressable
-            onPress={savePlan}
+            onPress={handleSave}
             disabled={saving}
             style={({ pressed }) => [
               styles.saveCta,
@@ -329,6 +393,33 @@ const styles = StyleSheet.create({
   title: {
     ...Typography.displayMedium,
     color: Colors.textPrimary,
+  },
+  chipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.xl,
+    marginTop: Spacing.xs,
+  },
+  contextChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    backgroundColor: Colors.bgCard,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    borderRadius: Radius.full,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 6,
+  },
+  contextChipWarning: {
+    backgroundColor: Colors.warningLight,
+    borderColor: Colors.warningLight,
+  },
+  contextChipText: {
+    ...Typography.meta,
+    color: Colors.textSecondary,
+    fontVariant: ['tabular-nums'],
   },
   // Card oscura de precisión
   accuracyCard: {
@@ -373,7 +464,38 @@ const styles = StyleSheet.create({
     color: Colors.secondaryLight,
     fontVariant: ['tabular-nums'],
   },
-  // Estados de carga / vacío
+  // Resumen por fase
+  phaseSummaryRow: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+    paddingHorizontal: Spacing.xl,
+    marginTop: Spacing.lg,
+  },
+  phaseSummaryCard: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: Colors.bgCard,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    paddingVertical: Spacing.md,
+  },
+  phaseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: Radius.full,
+    marginBottom: 2,
+  },
+  phaseSummaryValue: {
+    ...Typography.numberSmall,
+    color: Colors.textPrimary,
+  },
+  phaseSummaryLabel: {
+    ...Typography.meta,
+    fontSize: 11,
+  },
+  // Estados
   stateBox: {
     alignItems: 'center',
     gap: Spacing.md,
@@ -385,25 +507,16 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     textAlign: 'center',
   },
-  // Secciones por familia
-  section: {
-    marginTop: Spacing.xl,
+  // Fases y familias
+  phases: {
     paddingHorizontal: Spacing.xl,
-    gap: Spacing.sm,
+    marginTop: Spacing.lg,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
+  phaseBlock: {
     marginBottom: Spacing.xs,
   },
-  sectionDot: {
-    width: 10,
-    height: 10,
-    borderRadius: Radius.full,
-  },
-  sectionLabel: {
-    ...Typography.sectionLabel,
+  familyList: {
+    gap: Spacing.sm,
   },
   // Filas como cards
   rowCard: {
@@ -471,6 +584,38 @@ const styles = StyleSheet.create({
   },
   editHint: {
     ...Typography.meta,
+    fontVariant: ['tabular-nums'],
+  },
+  processRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  processLabel: {
+    ...Typography.meta,
+    marginRight: Spacing.xs,
+  },
+  processPill: {
+    minHeight: 36,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.bgCard,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  processPillActive: {
+    backgroundColor: Colors.primaryTint,
+    borderColor: Colors.primary,
+  },
+  processPillText: {
+    ...Typography.labelMedium,
+    fontSize: 13,
+    color: Colors.textSecondary,
+  },
+  processPillTextActive: {
+    color: Colors.primary,
   },
   editActions: {
     flexDirection: 'row',
