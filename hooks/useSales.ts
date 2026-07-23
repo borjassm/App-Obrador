@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { getLocationDisplay } from '@/constants/locations';
+import { useLocations } from '@/hooks/useLocations';
 import { analyticsService } from '@/services/analytics.service';
-import { locationService } from '@/services/location.service';
 import {
   salesService,
   type SalesDailyPoint,
@@ -12,12 +11,7 @@ import {
 
 export type QuickPeriod = 'dia' | 'semana' | 'mes' | 'anio' | 'todo';
 
-export interface LocationOption {
-  id: string;
-  shortName: string;
-}
-
-interface Range {
+export interface PeriodRange {
   start: string;
   end: string;
   prevStart?: string;
@@ -42,7 +36,7 @@ function addDays(date: Date, n: number): Date {
 // Rangos anclados al último día con ventas (anchor), no a la fecha real:
 // así la pantalla es útil aunque el import del ERP vaya con retraso.
 // Comparativa = tramo equivalente del periodo anterior (misma longitud).
-export function getPeriodRange(period: QuickPeriod, anchorISO: string, firstISO: string): Range {
+export function getPeriodRange(period: QuickPeriod, anchorISO: string, firstISO: string): PeriodRange {
   const anchor = parse(anchorISO);
   switch (period) {
     case 'dia': {
@@ -89,7 +83,7 @@ export function getPeriodRange(period: QuickPeriod, anchorISO: string, firstISO:
 
 const MONTHS_SHORT = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 
-export function formatPeriodLabel(period: QuickPeriod, range: Range): string {
+export function formatPeriodLabel(period: QuickPeriod, range: PeriodRange): string {
   const start = parse(range.start);
   const end = parse(range.end);
   if (period === 'dia') {
@@ -119,28 +113,21 @@ export interface SalesData {
 export function useSales() {
   const [period, setPeriod] = useState<QuickPeriod>('dia');
   const [locationId, setLocationId] = useState<string | 'all'>('all');
-  const [locations, setLocations] = useState<LocationOption[]>([]);
+  const locations = useLocations();
   const [anchor, setAnchor] = useState<string | null>(null);
   const [first, setFirst] = useState<string | null>(null);
   const [data, setData] = useState<SalesData | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Carga inicial: anclas de fechas y ubicaciones activas
+  // Carga inicial: anclas de fechas
   useEffect(() => {
     (async () => {
-      const [dates, firstDate, locationsRes] = await Promise.all([
+      const [dates, firstDate] = await Promise.all([
         analyticsService.latestDates(),
         salesService.firstSaleDate(),
-        locationService.listAll(),
       ]);
       setAnchor(dates?.latest_sale ?? null);
       setFirst(firstDate);
-      setLocations(
-        (locationsRes.data ?? []).map((l) => ({
-          id: l.id,
-          shortName: getLocationDisplay(l.name).shortName,
-        }))
-      );
       if (!dates?.latest_sale) setLoading(false);
     })();
   }, []);

@@ -622,31 +622,39 @@ export type Database = {
         Returns: { latest_sale: string | null; latest_session: string | null; latest_production: string | null }[]
       }
       analytics_overview: {
-        Args: { p_start: string; p_end: string }
+        Args: { p_start: string; p_end: string; p_location?: string | null }
         Returns: { total_revenue: number; total_units: number; active_products: number; days_with_sales: number; avg_daily_revenue: number }[]
       }
       analytics_daily_series: {
-        Args: { p_start: string; p_end: string }
+        Args: { p_start: string; p_end: string; p_location?: string | null }
         Returns: { sale_date: string; revenue: number; units: number }[]
       }
       analytics_top_products: {
-        Args: { p_start: string; p_end: string; p_limit?: number }
+        Args: { p_start: string; p_end: string; p_limit?: number; p_location?: string | null }
         Returns: { product_id: string; name: string; family: string; units: number; revenue: number; revenue_share: number }[]
       }
       analytics_family_breakdown: {
-        Args: { p_start: string; p_end: string }
+        Args: { p_start: string; p_end: string; p_location?: string | null }
         Returns: { family: string; units: number; revenue: number; revenue_share: number }[]
       }
       analytics_weekday_pattern: {
-        Args: { p_start: string; p_end: string }
+        Args: { p_start: string; p_end: string; p_location?: string | null }
         Returns: { weekday: number; avg_revenue: number; avg_units: number }[]
       }
       analytics_waste: {
-        Args: { p_start: string; p_end: string; p_limit?: number }
+        Args: { p_start: string; p_end: string; p_limit?: number; p_location?: string | null }
         Returns: { product_id: string; name: string; family: string; discarded: number; saved: number; waste_cost: number; lost_revenue: number }[]
       }
+      analytics_waste_series: {
+        Args: { p_start: string; p_end: string; p_location?: string | null }
+        Returns: { session_date: string; waste_qty: number; waste_cost: number }[]
+      }
+      analytics_product_series: {
+        Args: { p_start: string; p_end: string; p_product: string; p_location?: string | null }
+        Returns: { sale_date: string; revenue: number; units: number }[]
+      }
       analytics_profitability: {
-        Args: { p_start: string; p_end: string; p_limit?: number }
+        Args: { p_start: string; p_end: string; p_limit?: number; p_location?: string | null }
         Returns: { product_id: string; name: string; family: string; units: number; revenue: number; unit_cost: number; est_margin: number; margin_pct: number }[]
       }
       sales_period_summary: {

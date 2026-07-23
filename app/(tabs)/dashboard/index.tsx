@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Alert, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 
 import Card from '@/components/Card';
@@ -15,7 +16,10 @@ import {
   Typography,
   getFamilyColor,
 } from '@/constants/theme';
-import { useAnalytics, type Period } from '@/hooks/useAnalytics';
+import { useAnalytics, type CompareMode, type Period } from '@/hooks/useAnalytics';
+import { useLocations } from '@/hooks/useLocations';
+import { analyticsService, type DailyPoint } from '@/services/analytics.service';
+import { exportAnalyticsToExcel } from '@/services/export.service';
 
 const PERIOD_OPTIONS: { key: Period; label: string }[] = [
   { key: '7d', label: '7 días' },
@@ -23,6 +27,36 @@ const PERIOD_OPTIONS: { key: Period; label: string }[] = [
   { key: '90d', label: '90 días' },
   { key: '365d', label: '1 año' },
 ];
+
+const COMPARE_OPTIONS: { key: CompareMode; label: string }[] = [
+  { key: 'none', label: 'Sin comparar' },
+  { key: 'wow', label: 'Semana ant.' },
+  { key: 'mom', label: 'Mes ant.' },
+  { key: 'yoy', label: 'Año ant.' },
+];
+
+const COMPARE_LABEL: Record<Exclude<CompareMode, 'none'>, string> = {
+  wow: 'la semana anterior',
+  mom: 'el mes anterior',
+  yoy: 'el año anterior',
+};
+
+type ExplorerMetric = 'revenue' | 'units' | 'waste';
+type ExplorerGran = 'dia' | 'semana' | 'mes';
+
+const METRIC_OPTIONS: { key: ExplorerMetric; label: string }[] = [
+  { key: 'revenue', label: 'Facturación' },
+  { key: 'units', label: 'Unidades' },
+  { key: 'waste', label: 'Merma €' },
+];
+
+const GRAN_OPTIONS: { key: ExplorerGran; label: string }[] = [
+  { key: 'dia', label: 'Día' },
+  { key: 'semana', label: 'Semana' },
+  { key: 'mes', label: 'Mes' },
+];
+
+const MONTHS_SHORT = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 
 const WEEKDAY_LABELS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
@@ -59,6 +93,59 @@ function markEmphasis(points: BarPoint[]): BarPoint[] {
   });
 }
 
+// Lunes de la semana de una fecha (clave de agrupación semanal)
+function mondayOf(dateISO: string): string {
+  const d = new Date(dateISO + 'T12:00:00');
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Serie del explorador agrupada por día/semana/mes, con etiquetas dispersas
+function bucketExplorerSeries(
+  rows: { date: string; value: number }[],
+  gran: ExplorerGran
+): BarPoint[] {
+  if (gran === 'dia') {
+    if (rows.length > 31) {
+      const bucketSize = Math.ceil(rows.length / 30);
+      const points: BarPoint[] = [];
+      for (let i = 0; i < rows.length; i += bucketSize) {
+        const bucket = rows.slice(i, i + bucketSize);
+        points.push({
+          value: bucket.reduce((s, r) => s + r.value, 0),
+          label:
+            points.length % 5 === 0
+              ? bucket[0].date.slice(8, 10) + '/' + bucket[0].date.slice(5, 7)
+              : undefined,
+        });
+      }
+      return points;
+    }
+    const every = Math.max(1, Math.ceil(rows.length / 6));
+    return rows.map((r, i) => ({
+      value: r.value,
+      label: i % every === 0 ? r.date.slice(8, 10) + '/' + r.date.slice(5, 7) : undefined,
+    }));
+  }
+
+  const map = new Map<string, number>();
+  for (const r of rows) {
+    const key = gran === 'mes' ? r.date.slice(0, 7) : mondayOf(r.date);
+    map.set(key, (map.get(key) ?? 0) + r.value);
+  }
+  const entries = [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
+  const every = Math.max(1, Math.ceil(entries.length / 8));
+  return entries.map(([key, value], i) => ({
+    value,
+    label:
+      i % every === 0
+        ? gran === 'mes'
+          ? MONTHS_SHORT[parseInt(key.slice(5, 7), 10) - 1]
+          : key.slice(8, 10) + '/' + key.slice(5, 7)
+        : undefined,
+  }));
+}
+
 /** Agrupa la serie diaria en ~30 barras máximo (por semanas si hace falta). */
 function downsample(series: { sale_date: string; revenue: number }[]): BarPoint[] {
   if (series.length <= 31) {
@@ -82,7 +169,86 @@ function downsample(series: { sale_date: string; revenue: number }[]): BarPoint[
 export default function DashboardTab() {
   const { width } = useWindowDimensions();
   const isTablet = width >= TABLET_BREAKPOINT;
-  const { period, setPeriod, data, loading } = useAnalytics();
+  const {
+    period,
+    setPeriod,
+    locationId,
+    setLocationId,
+    compareMode,
+    setCompareMode,
+    comparison,
+    data,
+    loading,
+  } = useAnalytics();
+  const locations = useLocations();
+
+  // Explorador de gráficas
+  const [metric, setMetric] = useState<ExplorerMetric>('revenue');
+  const [granularity, setGranularity] = useState<ExplorerGran>('dia');
+  const [explorerProduct, setExplorerProduct] = useState<string | 'all'>('all');
+  const [productSeries, setProductSeries] = useState<DailyPoint[]>([]);
+  const [exporting, setExporting] = useState(false);
+
+  // Serie del producto elegido en el explorador (bajo demanda)
+  useEffect(() => {
+    if (explorerProduct === 'all' || !data?.periodStart) {
+      setProductSeries([]);
+      return;
+    }
+    let cancelled = false;
+    analyticsService
+      .productSeries(
+        data.periodStart,
+        data.periodEnd,
+        explorerProduct,
+        locationId === 'all' ? null : locationId
+      )
+      .then((rows) => {
+        if (!cancelled) setProductSeries(rows);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [explorerProduct, data?.periodStart, data?.periodEnd, locationId]);
+
+  // El producto seleccionado puede desaparecer del top al cambiar de periodo
+  useEffect(() => {
+    if (explorerProduct !== 'all' && data?.top && !data.top.some((p) => p.product_id === explorerProduct)) {
+      setExplorerProduct('all');
+    }
+  }, [data?.top, explorerProduct]);
+
+  const explorerPoints = useMemo<BarPoint[]>(() => {
+    if (!data) return [];
+    let rows: { date: string; value: number }[];
+    if (metric === 'waste') {
+      rows = data.wasteSeries.map((w) => ({ date: w.session_date, value: w.waste_cost }));
+    } else {
+      const source = explorerProduct === 'all' ? data.series : productSeries;
+      rows = source.map((s) => ({
+        date: s.sale_date,
+        value: metric === 'revenue' ? s.revenue : s.units,
+      }));
+    }
+    return markEmphasis(bucketExplorerSeries(rows, granularity));
+  }, [data, metric, granularity, explorerProduct, productSeries]);
+
+  const locationLabel =
+    locationId === 'all'
+      ? 'Todas'
+      : locations.find((l) => l.id === locationId)?.shortName ?? 'Ubicación';
+
+  const handleExport = async () => {
+    if (!data) return;
+    setExporting(true);
+    try {
+      await exportAnalyticsToExcel(data, locationLabel);
+    } catch (e) {
+      Alert.alert('Error al exportar', e instanceof Error ? e.message : String(e));
+    } finally {
+      setExporting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -236,6 +402,32 @@ export default function DashboardTab() {
         </>
       )}
 
+      {/* Ubicación + exportar */}
+      <View style={styles.controlsRow}>
+        <View style={styles.controlsPills}>
+          <FilterPills
+            options={[
+              { key: 'all', label: 'Todas' },
+              ...locations.map((l) => ({ key: l.id, label: l.shortName })),
+            ]}
+            selected={locationId}
+            onSelect={setLocationId}
+          />
+        </View>
+        <Pressable
+          onPress={handleExport}
+          disabled={exporting}
+          style={({ pressed }) => [
+            styles.exportBtn,
+            pressed && styles.exportBtnPressed,
+            exporting && styles.exportBtnDisabled,
+          ]}
+        >
+          <MaterialIcons name="file-download" size={18} color={Colors.primary} />
+          <Text style={styles.exportBtnText}>{exporting ? 'Exportando…' : 'Exportar'}</Text>
+        </Pressable>
+      </View>
+
       {/* KPIs: fila de 4 en tablet, 2×2 en móvil */}
       {isTablet ? (
         <View style={styles.kpiGrid}>{kpiCards}</View>
@@ -246,11 +438,121 @@ export default function DashboardTab() {
         </>
       )}
 
+      {/* Comparativa de calendario: semana / mes / año anterior */}
+      <Card style={styles.sectionCard} shadow="sm">
+        <Text style={styles.cardTitle}>Comparativa</Text>
+        <FilterPills
+          options={COMPARE_OPTIONS}
+          selected={compareMode}
+          onSelect={(k) => setCompareMode(k as CompareMode)}
+        />
+        {compareMode !== 'none' &&
+          (comparison?.current && comparison?.previous ? (
+            <>
+              <Text style={styles.compareCaption}>
+                {comparison.range.start.split('-').reverse().join('/')} –{' '}
+                {comparison.range.end.split('-').reverse().join('/')} frente a{' '}
+                {COMPARE_LABEL[compareMode]} (mismo tramo)
+              </Text>
+              <View style={styles.compareGrid}>
+                {(
+                  [
+                    ['Facturación', comparison.current.total_revenue, comparison.previous.total_revenue, true],
+                    ['Media/día', comparison.current.avg_daily_revenue, comparison.previous.avg_daily_revenue, true],
+                    ['Unidades', comparison.current.total_units, comparison.previous.total_units, false],
+                  ] as const
+                ).map(([label, curr, prev, isMoney]) => {
+                  const delta = deltaPct(curr, prev);
+                  const fmt = (n: number) =>
+                    isMoney ? euros(n) : Math.round(n).toLocaleString('es-ES');
+                  return (
+                    <View key={label} style={styles.compareStat}>
+                      <Text style={styles.compareStatLabel}>{label}</Text>
+                      <Text style={styles.compareStatValue}>{fmt(curr)}</Text>
+                      <Text style={styles.compareStatPrev}>antes {fmt(prev)}</Text>
+                      {delta != null && (
+                        <Text
+                          style={[
+                            styles.compareStatDelta,
+                            { color: delta >= 0 ? Colors.success : Colors.danger },
+                          ]}
+                        >
+                          {delta >= 0 ? '+' : ''}
+                          {delta}%
+                        </Text>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+              {comparison.movers.length > 0 && (
+                <>
+                  <Text style={styles.compareMoversTitle}>Productos con mayor cambio</Text>
+                  {comparison.movers.map((m, i) => (
+                    <View key={m.product_id} style={[styles.listRow, i > 0 && styles.topRowBorder]}>
+                      <View style={styles.listInfo}>
+                        <Text style={styles.topNameFlex} numberOfLines={1}>{m.name}</Text>
+                        <Text style={styles.listMeta}>
+                          {euros(m.prevRevenue)} → {euros(m.currentRevenue)}
+                        </Text>
+                      </View>
+                      <Text
+                        style={[
+                          styles.moverPct,
+                          { color: m.changePct >= 0 ? Colors.success : Colors.danger },
+                        ]}
+                      >
+                        {m.changePct >= 0 ? '+' : ''}
+                        {m.changePct}%
+                      </Text>
+                    </View>
+                  ))}
+                </>
+              )}
+            </>
+          ) : (
+            <Text style={styles.insightEmpty}>Calculando comparativa…</Text>
+          ))}
+      </Card>
+
       {/* Grid 3fr/2fr: ingresos por día + potenciales de mejora */}
       <View style={[styles.panelGrid, isTablet && styles.panelGridRow]}>
         {revenueChart}
         {insightsCard}
       </View>
+
+      {/* Explorador de gráficas */}
+      <Card style={styles.sectionCard} shadow="sm">
+        <Text style={styles.cardTitle}>Explorador de gráficas</Text>
+        <FilterPills
+          options={METRIC_OPTIONS}
+          selected={metric}
+          onSelect={(k) => setMetric(k as ExplorerMetric)}
+        />
+        <FilterPills
+          options={GRAN_OPTIONS}
+          selected={granularity}
+          onSelect={(k) => setGranularity(k as ExplorerGran)}
+        />
+        {metric !== 'waste' && data.top.length > 0 && (
+          <FilterPills
+            options={[
+              { key: 'all', label: 'Todos' },
+              ...data.top.map((p) => ({
+                key: p.product_id,
+                label: p.name.length > 16 ? p.name.slice(0, 15) + '…' : p.name,
+              })),
+            ]}
+            selected={explorerProduct}
+            onSelect={setExplorerProduct}
+          />
+        )}
+        {explorerPoints.length > 0 ? (
+          <MiniBarChart points={explorerPoints} height={isTablet ? 170 : 130} />
+        ) : (
+          <Text style={styles.insightEmpty}>Sin datos para esta combinación.</Text>
+        )}
+      </Card>
 
       {/* Top productos por ingresos */}
       <Card style={styles.sectionCard} shadow="sm">
@@ -398,6 +700,89 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
     paddingHorizontal: Spacing.lg,
     marginTop: Spacing.md,
+  },
+
+  // Ubicación + exportar
+  controlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingRight: Spacing.lg,
+  },
+  controlsPills: {
+    flex: 1,
+  },
+  exportBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    minHeight: 44,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: Radius.full,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    backgroundColor: Colors.bgCard,
+  },
+  exportBtnPressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.98 }],
+  },
+  exportBtnDisabled: {
+    opacity: 0.4,
+  },
+  exportBtnText: {
+    ...Typography.labelMedium,
+    fontSize: 13,
+    color: Colors.primary,
+  },
+
+  // Comparativa
+  compareCaption: {
+    ...Typography.meta,
+    fontVariant: ['tabular-nums'],
+  },
+  compareGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.md,
+  },
+  compareStat: {
+    flex: 1,
+    minWidth: 120,
+    gap: 2,
+    backgroundColor: Colors.bgBase,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+  },
+  compareStatLabel: {
+    fontFamily: Fonts.bold,
+    fontSize: 12.5,
+    lineHeight: 17,
+    color: Colors.textMuted,
+  },
+  compareStatValue: {
+    ...Typography.numberSmall,
+    color: Colors.textPrimary,
+  },
+  compareStatPrev: {
+    ...Typography.meta,
+    fontVariant: ['tabular-nums'],
+  },
+  compareStatDelta: {
+    fontFamily: Fonts.extraBold,
+    fontSize: 13,
+    lineHeight: 18,
+    fontVariant: ['tabular-nums'],
+  },
+  compareMoversTitle: {
+    ...Typography.sectionLabel,
+    marginTop: Spacing.sm,
+  },
+  moverPct: {
+    fontFamily: Fonts.extraBold,
+    fontSize: 14,
+    lineHeight: 20,
+    fontVariant: ['tabular-nums'],
   },
 
   // Grid de paneles (3fr / 2fr en tablet)
