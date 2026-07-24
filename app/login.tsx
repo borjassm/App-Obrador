@@ -309,13 +309,10 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     borderRadius: Radius.md,
   },
+  // Solo borderColor: añadir sombra/elevation al enfocar remonta el input en
+  // la Nueva Arquitectura y cierra el teclado (facebook/react-native#45798)
   inputWrapFocused: {
     borderColor: Colors.primary,
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.12,
-    shadowRadius: 4,
-    elevation: 2,
   },
   input: {
     flex: 1,
