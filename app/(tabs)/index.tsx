@@ -13,6 +13,7 @@ import { useAnalytics } from '@/hooks/useAnalytics';
 import { useGreeting } from '@/hooks/useGreeting';
 import { useLocationStatus } from '@/hooks/useLocationStatus';
 import { usePlanningData } from '@/hooks/usePlanningData';
+import { useRole } from '@/hooks/useRole';
 import { useSession } from '@/hooks/useSession';
 import { locationService } from '@/services/location.service';
 
@@ -96,6 +97,7 @@ function KpiCard({ icon, iconColor, value, description, horizontal }: KpiCardPro
 export default function HomeTab() {
   const greeting = useGreeting();
   const { session } = useSession();
+  const { isAdmin } = useRole();
   const { width } = useWindowDimensions();
   const isTablet = width >= TABLET_BREAKPOINT;
 
@@ -153,7 +155,7 @@ export default function HomeTab() {
             {userName ? `, ${userName}` : ''}
           </Text>
         </View>
-        {isTablet ? (
+        {isTablet && isAdmin ? (
           <View style={styles.syncChip}>
             <MaterialIcons name="sync" size={19} color={Colors.secondary} />
             <Text style={styles.syncChipText}>
@@ -207,8 +209,8 @@ export default function HomeTab() {
         </View>
       )}
 
-      {/* Mini-KPIs de hoy */}
-      {isTablet ? (
+      {/* Mini-KPIs de hoy (solo admin: usan ventas y plan) */}
+      {!isAdmin ? null : isTablet ? (
         <View>
           <SectionHeader title="Hoy en el obrador" />
           <View style={styles.kpiRowTablet}>

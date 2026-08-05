@@ -5,7 +5,12 @@ import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 
 import { Colors, Fonts, Radius, TABLET_BREAKPOINT } from '@/constants/theme';
+import { useRole } from '@/hooks/useRole';
 import { useSession } from '@/hooks/useSession';
+
+// Pestañas visibles para el rol empleado (usuario genérico del obrador):
+// registra el día a día y consulta el plan; sin ventas, analítica ni costes
+const EMPLOYEE_TABS = new Set(['index', 'obrador', 'planning/index', 'settings/index']);
 
 type TabIcon = {
   label: string;
@@ -45,8 +50,10 @@ const TAB_ICONS: Record<string, TabIcon> = {
 };
 
 function useTabItems({ state, navigation }: BottomTabBarProps) {
+  const { isAdmin } = useRole();
   return state.routes
     .filter((route) => TAB_ICONS[route.name])
+    .filter((route) => isAdmin || EMPLOYEE_TABS.has(route.name))
     .map((route) => {
       const focused = state.routes[state.index]?.key === route.key;
       const onPress = () => {

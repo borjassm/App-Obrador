@@ -5,11 +5,13 @@ import { MaterialIcons } from '@expo/vector-icons';
 import Card from '@/components/Card';
 import { Screen } from '@/components/Screen';
 import { Colors, Radius, Spacing, Typography } from '@/constants/theme';
+import { useRole } from '@/hooks/useRole';
 import { useSession } from '@/hooks/useSession';
 import { authService } from '@/services/auth.service';
 
 export default function SettingsTab() {
   const { session } = useSession();
+  const { isAdmin } = useRole();
   const userEmail = session?.user?.email ?? 'Usuario';
 
   const logout = async () => {
@@ -47,22 +49,26 @@ export default function SettingsTab() {
         </View>
         <View style={styles.userInfo}>
           <Text style={styles.userEmail}>{userEmail}</Text>
-          <Text style={styles.userRole}>Operador</Text>
+          <Text style={styles.userRole}>{isAdmin ? 'Administrador' : 'Empleado'}</Text>
         </View>
       </Card>
 
-      {/* Datos */}
-      <Text style={styles.sectionLabel}>Datos</Text>
-      <Card style={styles.dataCard} onPress={() => router.push('/(tabs)/import-erp')}>
-        <View style={styles.dataIconTile}>
-          <MaterialIcons name="upload-file" size={24} color={Colors.primary} />
-        </View>
-        <View style={styles.userInfo}>
-          <Text style={styles.userEmail}>Importar ventas del ERP</Text>
-          <Text style={styles.userRole}>Carga las exportaciones CSV para alimentar la analítica y las predicciones</Text>
-        </View>
-        <MaterialIcons name="chevron-right" size={24} color={Colors.textMuted} />
-      </Card>
+      {/* Datos (solo admin) */}
+      {isAdmin && (
+        <>
+          <Text style={styles.sectionLabel}>Datos</Text>
+          <Card style={styles.dataCard} onPress={() => router.push('/(tabs)/import-erp')}>
+            <View style={styles.dataIconTile}>
+              <MaterialIcons name="upload-file" size={24} color={Colors.primary} />
+            </View>
+            <View style={styles.userInfo}>
+              <Text style={styles.userEmail}>Importar ventas del ERP</Text>
+              <Text style={styles.userRole}>Carga las exportaciones CSV para alimentar la analítica y las predicciones</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color={Colors.textMuted} />
+          </Card>
+        </>
+      )}
 
       {/* App info */}
       <Text style={styles.sectionLabel}>Aplicación</Text>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 
@@ -11,8 +11,10 @@ import Stepper from '@/components/Stepper';
 import { Screen } from '@/components/Screen';
 import { compareFamilies } from '@/constants/families';
 import { Colors, Fonts, Radius, Shadows, Spacing, Typography } from '@/constants/theme';
-import { PHASE_ORDER, type Phase } from '@/features/planning/pipelineScheduler';
+import { addDays, isoLocal, PHASE_ORDER, type Phase } from '@/features/planning/pipelineScheduler';
 import { usePipelinePlanning, type PipelineItem } from '@/hooks/usePipelinePlanning';
+import { useRole } from '@/hooks/useRole';
+import { planningService } from '@/services/planning.service';
 
 const WEEKDAY_LABELS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
 const SALE_DAY_LABEL = ['hoy', 'mañana', 'pasado mañana'];
@@ -31,6 +33,168 @@ function factorLabel(value: number): string {
 }
 
 export default function PlanningTab() {
+  const { isAdmin, loading: roleLoading } = useRole();
+
+  if (roleLoading) {
+    return (
+      <Screen>
+        <View style={styles.stateBox}>
+          <MaterialIcons name="hourglass-empty" size={48} color={Colors.textMuted} />
+        </View>
+      </Screen>
+    );
+  }
+
+  return isAdmin ? <AdminPlanning /> : <EmployeePlanning />;
+}
+
+// ---------- Vista de solo lectura (empleado): el plan guardado por el admin ----------
+interface SavedPlanRow {
+  plan_date: string;
+  product_id: string;
+  suggested_qty: number;
+  override_qty: number | null;
+  phase: string;
+  nave_qty: number;
+  tienda_qty: number;
+  products: { name: string; family: string | null } | null;
+}
+
+function EmployeePlanning() {
+  const [rows, setRows] = useState<SavedPlanRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [collapsedPhases, setCollapsedPhases] = useState<Set<Phase>>(new Set());
+
+  const todayISO = useMemo(() => isoLocal(new Date()), []);
+  const targetDates = useMemo(() => {
+    const today = new Date(todayISO + 'T12:00:00');
+    return [0, 1, 2].map((n) => isoLocal(addDays(today, n)));
+  }, [todayISO]);
+
+  useEffect(() => {
+    let cancelled = false;
+    planningService.savedPlansDetailed(targetDates).then((data) => {
+      if (!cancelled) {
+        setRows(data as unknown as SavedPlanRow[]);
+        setLoading(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [targetDates]);
+
+  const byPhase = useMemo(() => {
+    const result: Record<Phase, SavedPlanRow[]> = { horneado: [], fermentacion: [], amasado: [] };
+    for (const row of rows) {
+      if (row.phase === 'horneado' || row.phase === 'fermentacion' || row.phase === 'amasado') {
+        result[row.phase as Phase].push(row);
+      }
+    }
+    return result;
+  }, [rows]);
+
+  const togglePhase = (phase: Phase) => {
+    configureCollapseAnimation();
+    setCollapsedPhases((prev) => {
+      const next = new Set(prev);
+      if (next.has(phase)) {
+        next.delete(phase);
+      } else {
+        next.add(phase);
+      }
+      return next;
+    });
+  };
+
+  const todayDate = new Date(todayISO + 'T12:00:00');
+  const weekdayName = WEEKDAY_LABELS[todayDate.getDay()];
+  const total = rows.length;
+
+  return (
+    <Screen scrollable>
+      <View style={styles.header}>
+        <Text style={styles.subtitle}>
+          Trabajo de hoy, {weekdayName} {todayDate.getDate()}/{todayDate.getMonth() + 1} · solo
+          lectura — el plan lo gestiona el administrador
+        </Text>
+        <Text style={styles.title}>Plan de producción</Text>
+      </View>
+
+      {loading ? (
+        <View style={styles.stateBox}>
+          <MaterialIcons name="hourglass-empty" size={48} color={Colors.textMuted} />
+          <Text style={styles.stateText}>Cargando el plan…</Text>
+        </View>
+      ) : total === 0 ? (
+        <View style={styles.stateBox}>
+          <MaterialIcons name="event-note" size={48} color={Colors.textMuted} />
+          <Text style={styles.stateText}>
+            El administrador aún no ha guardado el plan de estos días.
+          </Text>
+        </View>
+      ) : (
+        PHASE_ORDER.map((phase) => {
+          const config = PHASE_CONFIG[phase];
+          const phaseRows = byPhase[phase];
+          if (phaseRows.length === 0) return null;
+
+          const families = new Map<string, SavedPlanRow[]>();
+          for (const row of phaseRows) {
+            const family = row.products?.family ?? 'otros';
+            if (!families.has(family)) families.set(family, []);
+            families.get(family)!.push(row);
+          }
+          const sortedFamilies = [...families.entries()].sort(([a], [b]) => compareFamilies(a, b));
+          const units = phaseRows.reduce((s, r) => s + (r.override_qty ?? r.suggested_qty), 0);
+
+          return (
+            <CollapsibleSection
+              key={phase}
+              title={`${config.title} · ${config.detail}`}
+              color={config.color}
+              meta={`${phaseRows.length} prod · ${units.toLocaleString('es-ES')} uds`}
+              expanded={!collapsedPhases.has(phase)}
+              onToggle={() => togglePhase(phase)}
+            >
+              {sortedFamilies.map(([family, familyRows]) => (
+                <View key={family}>
+                  <SectionHeader title={family} family={family} count={familyRows.length} />
+                  <View style={styles.familyList}>
+                    {familyRows.map((row) => {
+                      const qty = row.override_qty ?? row.suggested_qty;
+                      return (
+                        <Card key={`${row.plan_date}_${row.product_id}`} style={styles.rowCard} shadow="sm">
+                          <View style={styles.row}>
+                            <View style={styles.rowInfo}>
+                              <Text style={styles.rowName} numberOfLines={1}>
+                                {row.products?.name ?? 'Producto'}
+                              </Text>
+                              <Text style={styles.rowExplain}>
+                                Nave {row.nave_qty} · Tienda {row.tienda_qty}
+                              </Text>
+                            </View>
+                            <View style={styles.qtyBox}>
+                              <Text style={styles.qtyNum}>{qty}</Text>
+                              <Text style={styles.qtyLabel}>uds</Text>
+                            </View>
+                          </View>
+                        </Card>
+                      );
+                    })}
+                  </View>
+                </View>
+              ))}
+            </CollapsibleSection>
+          );
+        })
+      )}
+    </Screen>
+  );
+}
+
+// ---------- Vista completa (admin): pipeline con sugerencias y edición ----------
+function AdminPlanning() {
   const {
     todayISO,
     pipeline,

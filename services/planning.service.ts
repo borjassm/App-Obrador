@@ -76,6 +76,18 @@ export const planningService = {
     );
   },
 
+  /** Plan guardado con datos de producto (vista de solo lectura del empleado). */
+  async savedPlansDetailed(datesISO: string[]) {
+    const { data } = await supabase
+      .from('production_plans')
+      .select(
+        'plan_date, product_id, suggested_qty, override_qty, phase, nave_qty, tienda_qty, products(name, family)'
+      )
+      .in('plan_date', datesISO)
+      .order('plan_date');
+    return data ?? [];
+  },
+
   /** Overrides guardados de varias fechas, con clave `${plan_date}_${product_id}`. */
   async savedPlans(datesISO: string[]): Promise<Map<string, number>> {
     const { data } = await supabase
