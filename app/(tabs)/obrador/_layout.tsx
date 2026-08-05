@@ -1,12 +1,12 @@
 import { Stack } from 'expo-router';
 
-// Grupo Obrador: menú + Producción diaria (el stock se retiró a petición del
-// cliente; sus datos siguen en BD por si vuelve en el futuro)
+// Obrador abre directamente en la producción diaria (petición del cliente).
+// La estructura por equipos (Panadería, Pastelería, Laminado, Horno) llegará
+// con el rediseño del bloque C.
 export default function ObradorLayout() {
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="index" />
-      <Stack.Screen name="production" />
     </Stack>
   );
 }
