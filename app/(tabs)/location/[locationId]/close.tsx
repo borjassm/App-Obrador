@@ -1,14 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 
 import Button from '@/components/Button';
@@ -18,15 +20,18 @@ import ProductCard from '@/components/ProductCard';
 import ProgressPill from '@/components/ProgressPill';
 import QuantityDisplay from '@/components/QuantityDisplay';
 import { Screen } from '@/components/Screen';
+import SectionHeader from '@/components/SectionHeader';
 import {
   Colors,
   Fonts,
   Radius,
+  Shadows,
   Spacing,
   TABLET_BREAKPOINT,
   Typography,
   getFamilyTint,
 } from '@/constants/theme';
+import { FAMILY_ORDER } from '@/constants/families';
 import { getLocationDisplay } from '@/constants/locations';
 import { supabase } from '@/lib/supabase';
 import { useProductEntries } from '@/hooks/useProductEntries';
@@ -80,12 +85,45 @@ export default function SobrantesScreen() {
     saving,
     updateEntry,
     updateDiscarded,
+    updateComment,
+    saveEntry,
     totalSobrantes,
     totalDescartado,
     filledCount,
     totalCount,
     closeDay,
+    reopenDay,
+    refresh,
+    addCustomProduct,
   } = useProductEntries(locationId ?? '');
+
+  // Al volver a esta pantalla, recargar: la ficha de producto (móvil) guarda
+  // en BD y la lista se quedaba desactualizada ("Pendiente" perpetuo)
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh])
+  );
+
+  // Alta manual de producto puntual
+  const [showAddProduct, setShowAddProduct] = useState(false);
+  const [newProductName, setNewProductName] = useState('');
+  const [newProductFamily, setNewProductFamily] = useState<string>('panaderia');
+  const [addingProduct, setAddingProduct] = useState(false);
+
+  const handleAddProduct = async () => {
+    if (!newProductName.trim() || addingProduct) return;
+    setAddingProduct(true);
+    const { error } = await addCustomProduct(newProductName, newProductFamily);
+    setAddingProduct(false);
+    if (error) {
+      Alert.alert('No se pudo crear', error);
+      return;
+    }
+    setShowAddProduct(false);
+    setNewProductName('');
+    setExpandedFamilies((prev) => new Set(prev).add(newProductFamily));
+  };
 
   const [showConfirm, setShowConfirm] = useState(false);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
@@ -249,15 +287,146 @@ export default function SobrantesScreen() {
     );
   }
 
+  // ---------- Día cerrado: resumen real (solo lo registrado) ----------
+  if (isClosed) {
+    const summaryGroups = groups
+      .map((group) => ({
+        family: group.family,
+        rows: group.products
+          .map((p) => ({ product: p, entry: entries.get(p.id) }))
+          .filter(({ entry }) => entry && (entry.savedQty > 0 || entry.discardedQty > 0)),
+      }))
+      .filter((g) => g.rows.length > 0);
+
+    return (
+      <Screen scrollable>
+        <View style={styles.summaryHero}>
+          <MaterialIcons name="check-circle" size={44} color={Colors.success} />
+          <Text style={styles.summaryTitle}>Día registrado</Text>
+          <Text style={styles.summaryMeta}>
+            {filledCount} productos · {totalSobrantes} uds guardadas · {totalDescartado} uds tiradas
+          </Text>
+        </View>
+
+        {summaryGroups.length === 0 ? (
+          <Text style={styles.summaryEmpty}>No se registró ningún sobrante hoy.</Text>
+        ) : (
+          summaryGroups.map((group) => (
+            <View key={group.family}>
+              <SectionHeader title={group.family} family={group.family} count={group.rows.length} />
+              <View style={styles.summaryList}>
+                {group.rows.map(({ product, entry }) => (
+                  <View key={product.id} style={styles.summaryRow}>
+                    <View style={styles.summaryInfo}>
+                      <Text style={styles.summaryName} numberOfLines={1}>{product.name}</Text>
+                      {!!entry!.comment && (
+                        <Text style={styles.summaryComment} numberOfLines={2}>
+                          {entry!.comment}
+                        </Text>
+                      )}
+                    </View>
+                    <View style={styles.summaryQtyBox}>
+                      <Text style={styles.summarySaved}>{entry!.savedQty}</Text>
+                      <Text style={styles.summaryQtyLabel}>guardado</Text>
+                    </View>
+                    <View style={styles.summaryQtyBox}>
+                      <Text style={styles.summaryDiscarded}>{entry!.discardedQty}</Text>
+                      <Text style={styles.summaryQtyLabel}>tirado</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ))
+        )}
+
+        <View style={styles.summaryFooter}>
+          <Button
+            title="Modificar registro"
+            variant="ghost"
+            onPress={async () => {
+              const { error } = await reopenDay();
+              if (error) Alert.alert('Error', 'No se pudo reabrir el día.');
+            }}
+          />
+        </View>
+      </Screen>
+    );
+  }
+
+  // Modal de alta manual de producto puntual (compartido móvil / tablet)
+  const addProductModal = (
+    <Modal visible={showAddProduct} transparent animationType="fade" onRequestClose={() => setShowAddProduct(false)}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <Text style={styles.modalTitle}>Añadir producto puntual</Text>
+          <Text style={styles.modalHint}>
+            Para cosas hechas hoy que no están en la lista. Quedará disponible también en producción
+            y plan.
+          </Text>
+          <TextInput
+            value={newProductName}
+            onChangeText={setNewProductName}
+            placeholder="Nombre del producto"
+            placeholderTextColor={Colors.textMuted}
+            style={styles.modalInput}
+            autoFocus
+          />
+          <View style={styles.modalFamilies}>
+            {FAMILY_ORDER.filter((f) => f !== 'otros').map((family) => (
+              <Pressable
+                key={family}
+                onPress={() => setNewProductFamily(family)}
+                style={({ pressed }) => [
+                  styles.modalFamilyPill,
+                  newProductFamily === family && styles.modalFamilyPillActive,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.modalFamilyText,
+                    newProductFamily === family && styles.modalFamilyTextActive,
+                  ]}
+                >
+                  {family}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          <View style={styles.modalActions}>
+            <Button
+              title="Cancelar"
+              variant="ghost"
+              onPress={() => setShowAddProduct(false)}
+              style={styles.modalActionBtn}
+            />
+            <Button
+              title={addingProduct ? 'Creando…' : 'Crear'}
+              onPress={handleAddProduct}
+              disabled={!newProductName.trim() || addingProduct}
+              style={styles.modalActionBtn}
+            />
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
   // ---------- Móvil: lista que navega a product/[productId] ----------
   if (!isTablet) {
     return (
       <Screen scrollable>
         <View style={styles.progressHeader}>
           <ProgressPill current={filledCount} total={totalCount} />
-          {!isClosed && (
-            <Text style={styles.hint}>Toca una familia para ver y registrar sus productos</Text>
-          )}
+          <Text style={styles.hint}>Toca una familia para ver y registrar sus productos</Text>
+          <Pressable
+            onPress={() => setShowAddProduct(true)}
+            style={({ pressed }) => [styles.addProductBtn, pressed && styles.pressed]}
+          >
+            <MaterialIcons name="add" size={18} color={Colors.primary} />
+            <Text style={styles.addProductText}>Añadir producto puntual</Text>
+          </Pressable>
         </View>
 
         {groups.map((group) => (
@@ -280,7 +449,7 @@ export default function SobrantesScreen() {
           </CollapsibleSection>
         ))}
 
-        {!isClosed && totalCount > 0 && (
+        {totalCount > 0 && (
           <View style={styles.mobileFooter}>
             <Button
               title={`Cerrar el día (${filledCount}/${totalCount})`}
@@ -290,14 +459,8 @@ export default function SobrantesScreen() {
           </View>
         )}
 
-        {isClosed && (
-          <View style={styles.closedNote}>
-            <MaterialIcons name="check-circle" size={20} color={Colors.success} />
-            <Text style={styles.closedNoteText}>Día registrado</Text>
-          </View>
-        )}
-
         {confirmSheet}
+        {addProductModal}
       </Screen>
     );
   }
@@ -352,18 +515,18 @@ export default function SobrantesScreen() {
           </ScrollView>
 
           <View style={styles.leftFooter}>
-            {isClosed ? (
-              <View style={styles.closedNote}>
-                <MaterialIcons name="check-circle" size={20} color={Colors.success} />
-                <Text style={styles.closedNoteText}>Día registrado</Text>
-              </View>
-            ) : (
-              <Button
-                title={`Cerrar el día (${filledCount}/${totalCount})`}
-                variant="secondary"
-                onPress={() => setShowConfirm(true)}
-              />
-            )}
+            <Pressable
+              onPress={() => setShowAddProduct(true)}
+              style={({ pressed }) => [styles.addProductBtn, pressed && styles.pressed]}
+            >
+              <MaterialIcons name="add" size={18} color={Colors.primary} />
+              <Text style={styles.addProductText}>Añadir producto puntual</Text>
+            </Pressable>
+            <Button
+              title={`Cerrar el día (${filledCount}/${totalCount})`}
+              variant="secondary"
+              onPress={() => setShowConfirm(true)}
+            />
           </View>
         </View>
 
@@ -399,7 +562,7 @@ export default function SobrantesScreen() {
                   style={styles.counterCard}
                 />
                 <QuantityDisplay
-                  label="Tirado / Merma"
+                  label="Tirado"
                   hint="Se desecha (pérdida)"
                   icon="delete"
                   value={selectedEntry?.discardedQty ?? 0}
@@ -410,6 +573,26 @@ export default function SobrantesScreen() {
                   style={styles.counterCard}
                 />
               </View>
+
+              {/* Comentario del producto (por qué se tira, incidencias…) */}
+              <View style={styles.commentCard}>
+                <Text style={styles.commentLabel}>Comentario</Text>
+                <TextInput
+                  value={selectedEntry?.comment ?? ''}
+                  onChangeText={(t) => updateComment(selectedProduct.id, t)}
+                  placeholder="Opcional: por qué se ha tirado, incidencias del día…"
+                  placeholderTextColor={Colors.textMuted}
+                  style={styles.commentInput}
+                  multiline
+                />
+              </View>
+
+              <Button
+                title={selectedEntry?.dirty ? 'Guardar producto' : 'Guardado'}
+                variant={selectedEntry?.dirty ? 'primary' : 'ghost'}
+                disabled={!selectedEntry?.dirty}
+                onPress={() => saveEntry(selectedProduct.id)}
+              />
 
               <View style={styles.navRow}>
                 <Button
@@ -437,6 +620,7 @@ export default function SobrantesScreen() {
       </View>
 
       {confirmSheet}
+      {addProductModal}
     </Screen>
   );
 }
@@ -467,16 +651,184 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.xl,
     paddingBottom: Spacing.xxl,
   },
-  closedNote: {
+
+  // Añadir producto puntual
+  addProductBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.sm,
-    paddingVertical: Spacing.lg,
+    gap: Spacing.xs,
+    minHeight: 44,
+    borderRadius: Radius.md,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    backgroundColor: Colors.bgCard,
+    paddingHorizontal: Spacing.lg,
   },
-  closedNoteText: {
+  addProductText: {
     ...Typography.labelMedium,
-    color: Colors.success,
+    color: Colors.primary,
+  },
+
+  // Modal de alta
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: Colors.overlay,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: Spacing.xl,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 440,
+    backgroundColor: Colors.bgBase,
+    borderRadius: Radius.xl,
+    padding: Spacing.xl,
+    gap: Spacing.md,
+    ...Shadows.lg,
+  },
+  modalTitle: {
+    ...Typography.headingLarge,
+    color: Colors.textPrimary,
+  },
+  modalHint: {
+    ...Typography.bodySmall,
+    color: Colors.textMuted,
+  },
+  modalInput: {
+    minHeight: 52,
+    borderRadius: Radius.md,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    backgroundColor: Colors.bgCard,
+    paddingHorizontal: Spacing.lg,
+    ...Typography.bodyLarge,
+    color: Colors.textPrimary,
+  },
+  modalFamilies: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+  },
+  modalFamilyPill: {
+    minHeight: 38,
+    paddingHorizontal: Spacing.md,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.bgCard,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalFamilyPillActive: {
+    backgroundColor: Colors.primaryTint,
+    borderColor: Colors.primary,
+  },
+  modalFamilyText: {
+    ...Typography.labelMedium,
+    fontSize: 13,
+    color: Colors.textSecondary,
+    textTransform: 'capitalize',
+  },
+  modalFamilyTextActive: {
+    color: Colors.primary,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+    marginTop: Spacing.sm,
+  },
+  modalActionBtn: {
+    flex: 1,
+  },
+
+  // Comentario (panel tablet)
+  commentCard: {
+    backgroundColor: Colors.bgCard,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    padding: Spacing.lg,
+    gap: Spacing.sm,
+  },
+  commentLabel: {
+    ...Typography.labelSmall,
+    color: Colors.textSecondary,
+  },
+  commentInput: {
+    minHeight: 64,
+    ...Typography.bodyMedium,
+    color: Colors.textPrimary,
+    textAlignVertical: 'top',
+  },
+
+  // Resumen del día cerrado
+  summaryHero: {
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.xxl,
+  },
+  summaryTitle: {
+    ...Typography.displayMedium,
+    color: Colors.textPrimary,
+  },
+  summaryMeta: {
+    ...Typography.bodyMedium,
+    color: Colors.textSecondary,
+    fontVariant: ['tabular-nums'],
+  },
+  summaryEmpty: {
+    ...Typography.bodyMedium,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    paddingVertical: Spacing.xxl,
+  },
+  summaryList: {
+    gap: Spacing.sm,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.lg,
+    minHeight: 56,
+    backgroundColor: Colors.bgCard,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+  },
+  summaryInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  summaryName: {
+    ...Typography.bodyLarge,
+    color: Colors.textPrimary,
+  },
+  summaryComment: {
+    ...Typography.meta,
+    fontStyle: 'italic',
+  },
+  summaryQtyBox: {
+    alignItems: 'center',
+    minWidth: 64,
+  },
+  summarySaved: {
+    ...Typography.numberSmall,
+    color: Colors.primary,
+  },
+  summaryDiscarded: {
+    ...Typography.numberSmall,
+    color: Colors.danger,
+  },
+  summaryQtyLabel: {
+    ...Typography.meta,
+    fontSize: 11,
+  },
+  summaryFooter: {
+    paddingTop: Spacing.xl,
+    paddingBottom: Spacing.xxl,
   },
 
   // Tablet master-detail

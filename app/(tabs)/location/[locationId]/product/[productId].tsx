@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 
@@ -33,6 +33,7 @@ export default function ProductDetail() {
   const [product, setProduct] = useState<{ name: string; family: string } | null>(null);
   const [savedQty, setSavedQty] = useState(0);
   const [discardedQty, setDiscardedQty] = useState(0);
+  const [comment, setComment] = useState('');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [orderedProducts, setOrderedProducts] = useState<Product[]>([]);
@@ -40,11 +41,13 @@ export default function ProductDetail() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedRef = useRef(0);
   const discardedRef = useRef(0);
+  const commentRef = useRef('');
   const sessionIdRef = useRef<string | null>(null);
 
   // Keep refs in sync
   useEffect(() => { savedRef.current = savedQty; }, [savedQty]);
   useEffect(() => { discardedRef.current = discardedQty; }, [discardedQty]);
+  useEffect(() => { commentRef.current = comment; }, [comment]);
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
 
   // Lista ordenada de productos (para "X de Y" y "Siguiente")
@@ -63,6 +66,7 @@ export default function ProductDetail() {
       setProduct(null);
       setSavedQty(0);
       setDiscardedQty(0);
+      setComment('');
       setSaveStatus('idle');
 
       // Get product details
@@ -81,7 +85,7 @@ export default function ProductDetail() {
         // Load existing entry
         const { data: entry } = await supabase
           .from('daily_product_entries')
-          .select('saved_qty, discarded_qty')
+          .select('saved_qty, discarded_qty, comment')
           .eq('daily_session_id', sess.id)
           .eq('product_id', productId)
           .maybeSingle();
@@ -89,6 +93,7 @@ export default function ProductDetail() {
         if (entry) {
           setSavedQty(entry.saved_qty ?? 0);
           setDiscardedQty(entry.discarded_qty ?? 0);
+          setComment(entry.comment ?? '');
         }
       }
     };
@@ -96,13 +101,20 @@ export default function ProductDetail() {
     load();
   }, [productId, locationId, session?.user.id]);
 
-  // Auto-save with debounce (saves both saved + discarded)
+  // Auto-save with debounce (saves qty + comment)
   const doSave = useCallback(async () => {
     const sid = sessionIdRef.current;
     if (!sid || !productId) return;
 
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+
     setSaveStatus('saving');
-    await sessionService.upsertSingleEntry(sid, productId, savedRef.current, discardedRef.current);
+    await sessionService.upsertSingleEntry(
+      sid, productId, savedRef.current, discardedRef.current, commentRef.current
+    );
     setSaveStatus('saved');
 
     // Reset to idle after showing "saved"
@@ -125,6 +137,11 @@ export default function ProductDetail() {
     scheduleSave();
   }, [scheduleSave]);
 
+  const handleCommentChange = useCallback((value: string) => {
+    setComment(value);
+    scheduleSave();
+  }, [scheduleSave]);
+
   // Cleanup debounce on unmount / cambio de producto — save immediately if pending
   useEffect(() => {
     return () => {
@@ -132,7 +149,9 @@ export default function ProductDetail() {
         clearTimeout(debounceRef.current);
         const sid = sessionIdRef.current;
         if (sid && productId) {
-          sessionService.upsertSingleEntry(sid, productId, savedRef.current, discardedRef.current);
+          sessionService.upsertSingleEntry(
+            sid, productId, savedRef.current, discardedRef.current, commentRef.current
+          );
         }
       }
     };
@@ -228,9 +247,9 @@ export default function ProductDetail() {
         size="counter"
       />
 
-      {/* Tirado / Merma */}
+      {/* Tirado */}
       <QuantityDisplay
-        label="Tirado / Merma"
+        label="Tirado"
         hint="Se desecha (pérdida)"
         icon="delete"
         value={discardedQty}
@@ -238,6 +257,26 @@ export default function ProductDetail() {
         color={Colors.danger}
         tint={Colors.dangerLight}
         size="counter"
+      />
+
+      {/* Comentario (por qué se tira, incidencias…) */}
+      <View style={styles.commentCard}>
+        <Text style={styles.commentLabel}>Comentario</Text>
+        <TextInput
+          value={comment}
+          onChangeText={handleCommentChange}
+          placeholder="Opcional: por qué se ha tirado, incidencias del día…"
+          placeholderTextColor={Colors.textMuted}
+          style={styles.commentInput}
+          multiline
+        />
+      </View>
+
+      {/* Guardar explícito: persiste ya y muestra el check en el chip */}
+      <Button
+        title={saveStatus === 'saved' ? 'Guardado' : 'Guardar'}
+        variant={saveStatus === 'saved' ? 'ghost' : 'primary'}
+        onPress={doSave}
       />
 
       {/* Footer: volver + siguiente */}
@@ -330,6 +369,25 @@ const styles = StyleSheet.create({
     lineHeight: 30,
     color: Colors.textPrimary,
     textAlign: 'center',
+  },
+  commentCard: {
+    backgroundColor: Colors.bgCard,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: Spacing.lg,
+    gap: Spacing.sm,
+    marginBottom: Spacing.lg,
+  },
+  commentLabel: {
+    ...Typography.labelSmall,
+    color: Colors.textSecondary,
+  },
+  commentInput: {
+    minHeight: 56,
+    ...Typography.bodyMedium,
+    color: Colors.textPrimary,
+    textAlignVertical: 'top',
   },
   footer: {
     flexDirection: 'row',

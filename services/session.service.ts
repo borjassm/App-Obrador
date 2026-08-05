@@ -42,7 +42,7 @@ export const sessionService = {
   async getSessionWithEntries(sessionId: string) {
     const { data: entries, error } = await supabase
       .from('daily_product_entries')
-      .select('product_id, saved_qty, discarded_qty, discard_reason')
+      .select('product_id, saved_qty, discarded_qty, discard_reason, comment')
       .eq('daily_session_id', sessionId);
 
     return { entries: entries ?? [], error };
@@ -64,25 +64,35 @@ export const sessionService = {
     productId: string,
     savedQty: number,
     discardedQty: number,
-    discardReason?: string
+    comment?: string | null
   ) {
+    // El comentario solo se toca si viene definido (undefined = conservar)
+    const payload: {
+      daily_session_id: string;
+      product_id: string;
+      saved_qty: number;
+      discarded_qty: number;
+      comment?: string | null;
+    } = {
+      daily_session_id: dailySessionId,
+      product_id: productId,
+      saved_qty: savedQty,
+      discarded_qty: discardedQty,
+    };
+    if (comment !== undefined) payload.comment = comment || null;
+
     return supabase
       .from('daily_product_entries')
-      .upsert(
-        {
-          daily_session_id: dailySessionId,
-          product_id: productId,
-          saved_qty: savedQty,
-          discarded_qty: discardedQty,
-          discard_reason: discardReason ?? null,
-        },
-        { onConflict: 'daily_session_id,product_id' }
-      )
-      .select('id, product_id, saved_qty, discarded_qty, discard_reason')
+      .upsert(payload, { onConflict: 'daily_session_id,product_id' })
+      .select('id, product_id, saved_qty, discarded_qty, comment')
       .single();
   },
 
   async closeSession(sessionId: string) {
     return supabase.from('daily_sessions').update({ status: 'closed' as const }).eq('id', sessionId);
+  },
+
+  async reopenSession(sessionId: string) {
+    return supabase.from('daily_sessions').update({ status: 'open' as const }).eq('id', sessionId);
   },
 };

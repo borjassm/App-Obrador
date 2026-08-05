@@ -8,6 +8,7 @@ export interface ProductEntry {
   product: Product;
   savedQty: number;
   discardedQty: number;
+  comment: string;
   dirty: boolean;
 }
 
@@ -20,8 +21,12 @@ interface UseProductEntriesReturn {
   saving: boolean;
   updateEntry: (productId: string, value: number) => void;
   updateDiscarded: (productId: string, value: number) => void;
+  updateComment: (productId: string, value: string) => void;
   saveEntry: (productId: string) => Promise<void>;
   closeDay: () => Promise<{ error: Error | null }>;
+  reopenDay: () => Promise<{ error: Error | null }>;
+  refresh: () => Promise<void>;
+  addCustomProduct: (name: string, family: string) => Promise<{ error: string | null }>;
   totalSobrantes: number;
   totalDescartado: number;
   filledCount: number;
@@ -50,49 +55,60 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
   useEffect(() => { entriesRef.current = entries; }, [entries]);
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
 
+  const load = useCallback(async (showSpinner: boolean) => {
+    if (!locationId || !session?.user.id) return;
+    if (showSpinner) setLoading(true);
+
+    // Ensure session exists
+    const { data: sess } = await sessionService.openSession(locationId, todayISO(), session.user.id);
+    if (!sess) {
+      setLoading(false);
+      return;
+    }
+    setSessionId(sess.id);
+    setSessionStatus(sess.status);
+
+    // Load products grouped by family
+    const productGroups = await productService.listGroupedByFamily();
+    setGroups(productGroups);
+
+    // Load existing entries
+    const { entries: existingEntries } = await sessionService.getSessionWithEntries(sess.id);
+
+    // Build entries map — sin pisar cambios locales pendientes de guardar
+    const prevEntries = entriesRef.current;
+    const entryMap = new Map<string, ProductEntry>();
+    const allProducts = productGroups.flatMap((g) => g.products);
+
+    for (const product of allProducts) {
+      const local = prevEntries.get(product.id);
+      if (local?.dirty) {
+        entryMap.set(product.id, local);
+        continue;
+      }
+      const existing = existingEntries.find((e) => e.product_id === product.id);
+      entryMap.set(product.id, {
+        product,
+        savedQty: existing?.saved_qty ?? 0,
+        discardedQty: existing?.discarded_qty ?? 0,
+        comment: existing?.comment ?? '',
+        dirty: false,
+      });
+    }
+
+    setEntries(entryMap);
+    setLoading(false);
+  }, [locationId, session?.user.id]);
+
   // Initialize: ensure session exists and load products + existing entries
   useEffect(() => {
-    if (!locationId || !session?.user.id) return;
+    load(true);
+  }, [load]);
 
-    const init = async () => {
-      setLoading(true);
-
-      // Ensure session exists
-      const { data: sess } = await sessionService.openSession(locationId, todayISO(), session.user.id);
-      if (!sess) {
-        setLoading(false);
-        return;
-      }
-      setSessionId(sess.id);
-      setSessionStatus(sess.status);
-
-      // Load products grouped by family
-      const productGroups = await productService.listGroupedByFamily();
-      setGroups(productGroups);
-
-      // Load existing entries
-      const { entries: existingEntries } = await sessionService.getSessionWithEntries(sess.id);
-
-      // Build entries map
-      const entryMap = new Map<string, ProductEntry>();
-      const allProducts = productGroups.flatMap((g) => g.products);
-
-      for (const product of allProducts) {
-        const existing = existingEntries.find((e) => e.product_id === product.id);
-        entryMap.set(product.id, {
-          product,
-          savedQty: existing?.saved_qty ?? 0,
-          discardedQty: existing?.discarded_qty ?? 0,
-          dirty: false,
-        });
-      }
-
-      setEntries(entryMap);
-      setLoading(false);
-    };
-
-    init();
-  }, [locationId, session?.user.id]);
+  // Recarga silenciosa (al recuperar el foco: otra pantalla pudo guardar datos)
+  const refresh = useCallback(async () => {
+    await load(false);
+  }, [load]);
 
   // Persist one product's entry (saved + discarded) after a debounce
   const scheduleUpsert = useCallback((productId: string) => {
@@ -106,7 +122,9 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
       if (!sid || !entry) return;
 
       setSaving(true);
-      await sessionService.upsertSingleEntry(sid, productId, entry.savedQty, entry.discardedQty);
+      await sessionService.upsertSingleEntry(
+        sid, productId, entry.savedQty, entry.discardedQty, entry.comment
+      );
 
       setEntries((prev) => {
         const next = new Map(prev);
@@ -145,13 +163,35 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
     scheduleUpsert(productId);
   }, [scheduleUpsert]);
 
+  const updateComment = useCallback((productId: string, value: string) => {
+    setEntries((prev) => {
+      const next = new Map(prev);
+      const entry = next.get(productId);
+      if (entry) {
+        next.set(productId, { ...entry, comment: value, dirty: true });
+      }
+      return next;
+    });
+    scheduleUpsert(productId);
+  }, [scheduleUpsert]);
+
+  // Guardado inmediato y explícito (botón "Guardar"): cancela el debounce y
+  // persiste ya, aunque la entrada no esté marcada como dirty
   const saveEntry = useCallback(async (productId: string) => {
-    if (!sessionId) return;
-    const entry = entries.get(productId);
-    if (!entry || !entry.dirty) return;
+    const sid = sessionIdRef.current;
+    const entry = entriesRef.current.get(productId);
+    if (!sid || !entry) return;
+
+    const timer = debounceTimers.current.get(productId);
+    if (timer) {
+      clearTimeout(timer);
+      debounceTimers.current.delete(productId);
+    }
 
     setSaving(true);
-    await sessionService.upsertSingleEntry(sessionId, productId, entry.savedQty, entry.discardedQty);
+    await sessionService.upsertSingleEntry(
+      sid, productId, entry.savedQty, entry.discardedQty, entry.comment
+    );
 
     setEntries((prev) => {
       const next = new Map(prev);
@@ -160,7 +200,7 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
       return next;
     });
     setSaving(false);
-  }, [sessionId, entries]);
+  }, []);
 
   const closeDay = useCallback(async () => {
     if (!sessionId) return { error: new Error('No session') };
@@ -168,7 +208,9 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
     // Save all dirty entries first
     for (const [productId, entry] of entries) {
       if (entry.dirty) {
-        await sessionService.upsertSingleEntry(sessionId, productId, entry.savedQty, entry.discardedQty);
+        await sessionService.upsertSingleEntry(
+          sessionId, productId, entry.savedQty, entry.discardedQty, entry.comment
+        );
       }
     }
 
@@ -176,6 +218,26 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
     if (!error) setSessionStatus('closed');
     return { error: error ? new Error(String(error)) : null };
   }, [sessionId, entries]);
+
+  const reopenDay = useCallback(async () => {
+    if (!sessionId) return { error: new Error('No session') };
+    const { error } = await sessionService.reopenSession(sessionId);
+    if (!error) setSessionStatus('open');
+    return { error: error ? new Error(String(error)) : null };
+  }, [sessionId]);
+
+  // Producto puntual añadido a mano desde el cierre
+  const addCustomProduct = useCallback(async (name: string, family: string) => {
+    const { error } = await productService.createCustom(name, family);
+    if (error) {
+      const message = error.code === '23505'
+        ? 'Ya existe un producto con ese nombre.'
+        : 'No se pudo crear el producto.';
+      return { error: message };
+    }
+    await load(false);
+    return { error: null };
+  }, [load]);
 
   // Cleanup debounce timers on unmount
   useEffect(() => {
@@ -205,8 +267,12 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
     saving,
     updateEntry,
     updateDiscarded,
+    updateComment,
     saveEntry,
     closeDay,
+    reopenDay,
+    refresh,
+    addCustomProduct,
     totalSobrantes,
     totalDescartado,
     filledCount,

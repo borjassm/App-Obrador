@@ -41,4 +41,21 @@ export const productService = {
 
     return sorted.map(([family, products]) => ({ family, products }));
   },
+
+  // Alta manual de un producto puntual desde el cierre del día. Nace como
+  // producto de obrador para que entre en sobrantes/producción/plan.
+  async createCustom(name: string, family: string) {
+    return supabase
+      .from('products')
+      .insert({
+        name: name.trim(),
+        family,
+        is_active: true,
+        is_obrador: true,
+        is_custom: true,
+        display_order: 99,
+      })
+      .select('id,name,family,sale_price')
+      .single();
+  },
 };

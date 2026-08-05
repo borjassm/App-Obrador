@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 
 import Badge from '@/components/Badge';
@@ -30,11 +30,17 @@ export default function LocationDashboard() {
       });
   }, [locationId]);
 
-  // Refresh on focus
+  // Refresco periódico + inmediato al recuperar el foco (volver de registrar)
   useEffect(() => {
     const interval = setInterval(refresh, 5000);
     return () => clearInterval(interval);
   }, [refresh]);
+
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh])
+  );
 
   const display = getLocationDisplay(locationName);
 

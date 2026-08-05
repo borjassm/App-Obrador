@@ -12,21 +12,8 @@ export default function ObradorTab() {
     <Screen scrollable>
       <View style={styles.header}>
         <Text style={styles.title}>Obrador</Text>
-        <Text style={styles.subtitle}>Stock de materias primas y registro de producción</Text>
+        <Text style={styles.subtitle}>Registro de la producción diaria</Text>
       </View>
-
-      <Card style={styles.menuCard} onPress={() => router.push('/(tabs)/obrador/stock')}>
-        <View style={[styles.iconTile, { backgroundColor: Colors.secondaryTint }]}>
-          <MaterialIcons name="inventory-2" size={26} color={Colors.secondary} />
-        </View>
-        <View style={styles.menuInfo}>
-          <Text style={styles.menuTitle}>Stock</Text>
-          <Text style={styles.menuDetail}>
-            Ingredientes y producto terminado · recuentos y avisos de mínimo
-          </Text>
-        </View>
-        <MaterialIcons name="chevron-right" size={26} color={Colors.textMuted} />
-      </Card>
 
       <Card style={styles.menuCard} onPress={() => router.push('/(tabs)/obrador/production')}>
         <View style={[styles.iconTile, { backgroundColor: Colors.primaryTint }]}>

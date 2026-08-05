@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 
 import Button from '@/components/Button';
@@ -14,7 +14,6 @@ import { useGreeting } from '@/hooks/useGreeting';
 import { useLocationStatus } from '@/hooks/useLocationStatus';
 import { usePlanningData } from '@/hooks/usePlanningData';
 import { useSession } from '@/hooks/useSession';
-import { useStock } from '@/hooks/useStock';
 import { locationService } from '@/services/location.service';
 
 interface LocationRow {
@@ -51,7 +50,15 @@ function initials(name: string): string {
 }
 
 function LocationCardWithStatus({ location, isTablet }: { location: LocationRow; isTablet: boolean }) {
-  const { status, entryCount, totalProducts } = useLocationStatus(location.id);
+  const { status, entryCount, totalProducts, refresh } = useLocationStatus(location.id);
+
+  // Refrescar al volver a Inicio: el estado cambia mientras se registra en
+  // otras pantallas (era el bug de "Pendiente" perpetuo)
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh])
+  );
 
   return (
     <LocationCard
@@ -97,7 +104,6 @@ export default function HomeTab() {
   const [error, setError] = useState<string | null>(null);
 
   const { plans, loading: planLoading } = usePlanningData();
-  const { lowCount, loading: stockLoading } = useStock();
   const { data: analytics } = useAnalytics();
 
   const userEmail = session?.user?.email ?? '';
@@ -214,13 +220,6 @@ export default function HomeTab() {
               horizontal
             />
             <KpiCard
-              icon="warning"
-              iconColor={Colors.danger}
-              value={stockLoading ? '—' : `${lowCount} ${lowCount === 1 ? 'ingrediente' : 'ingredientes'}`}
-              description="por debajo del mínimo"
-              horizontal
-            />
-            <KpiCard
               icon="payments"
               iconColor={Colors.primary}
               value={lastRevenue}
@@ -240,10 +239,10 @@ export default function HomeTab() {
               description="plan de hoy"
             />
             <KpiCard
-              icon="warning"
-              iconColor={Colors.danger}
-              value={stockLoading ? '—' : `${lowCount} ${lowCount === 1 ? 'bajo' : 'bajos'}`}
-              description="stock mínimo"
+              icon="payments"
+              iconColor={Colors.primary}
+              value={lastRevenue}
+              description={salesDate ? `ventas ${salesDate}` : 'ventas de ayer'}
             />
           </View>
         </View>

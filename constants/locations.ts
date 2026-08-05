@@ -19,18 +19,18 @@ export const LOCATION_DISPLAY: Record<string, LocationDisplay> = {
     description: 'Producción + Punto de venta · Los Urquiza 17',
   },
   'SANTA FELICIANA 10': {
-    shortName: 'La Tienda',
+    shortName: 'Olavide Shop',
     icon: 'storefront',
     color: Colors.primary,
     tint: Colors.primaryTint,
     description: 'Punto de venta · junto a Plaza de Olavide',
   },
   'NUEVA TIENDA': {
-    shortName: 'Nueva tienda',
+    shortName: 'Jorge Juan Shop',
     icon: 'storefront',
     color: Colors.primary,
     tint: Colors.primaryTint,
-    description: 'Próximamente · nombre por confirmar',
+    description: 'Punto de venta · calle Jorge Juan',
   },
 };
 
