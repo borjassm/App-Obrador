@@ -382,6 +382,99 @@ export type Database = {
           },
         ]
       }
+      shipments: {
+        Row: {
+          created_at: string
+          dest_location_id: string
+          id: string
+          notes: string | null
+          origin_location_id: string
+          received_at: string | null
+          shipment_date: string
+          status: string
+          trip: number
+        }
+        Insert: {
+          created_at?: string
+          dest_location_id: string
+          id?: string
+          notes?: string | null
+          origin_location_id: string
+          received_at?: string | null
+          shipment_date?: string
+          status?: string
+          trip?: number
+        }
+        Update: {
+          created_at?: string
+          dest_location_id?: string
+          id?: string
+          notes?: string | null
+          origin_location_id?: string
+          received_at?: string | null
+          shipment_date?: string
+          status?: string
+          trip?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shipments_origin_location_id_fkey"
+            columns: ["origin_location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shipments_dest_location_id_fkey"
+            columns: ["dest_location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shipment_items: {
+        Row: {
+          comment: string | null
+          id: string
+          product_id: string
+          qty_received: number | null
+          qty_sent: number
+          shipment_id: string
+        }
+        Insert: {
+          comment?: string | null
+          id?: string
+          product_id: string
+          qty_received?: number | null
+          qty_sent: number
+          shipment_id: string
+        }
+        Update: {
+          comment?: string | null
+          id?: string
+          product_id?: string
+          qty_received?: number | null
+          qty_sent?: number
+          shipment_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shipment_items_shipment_id_fkey"
+            columns: ["shipment_id"]
+            isOneToOne: false
+            referencedRelation: "shipments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shipment_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       production_teams: {
         Row: {
           created_at: string

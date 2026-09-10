@@ -57,20 +57,34 @@ export default function ObradorTeamsScreen() {
           <MaterialIcons name="hourglass-empty" size={48} color={Colors.textMuted} />
         </View>
       ) : (
-        teams.map((team) => {
-          const visual = teamVisual(team.name);
-          return (
-            <Card
-              key={team.id}
-              style={styles.teamCard}
-              onPress={() => router.push(`/(tabs)/obrador/${team.id}`)}
-            >
-              <View style={[styles.iconTile, { backgroundColor: visual.tint }]}>{visual.icon}</View>
-              <Text style={styles.teamName}>{team.name}</Text>
-              <MaterialIcons name="chevron-right" size={26} color={Colors.textMuted} />
-            </Card>
-          );
-        })
+        <>
+          {teams.map((team) => {
+            const visual = teamVisual(team.name);
+            return (
+              <Card
+                key={team.id}
+                style={styles.teamCard}
+                onPress={() => router.push(`/(tabs)/obrador/${team.id}`)}
+              >
+                <View style={[styles.iconTile, { backgroundColor: visual.tint }]}>{visual.icon}</View>
+                <Text style={styles.teamName}>{team.name}</Text>
+                <MaterialIcons name="chevron-right" size={26} color={Colors.textMuted} />
+              </Card>
+            );
+          })}
+
+          {/* Envíos entre lugares (repartidor y recepción en tienda) */}
+          <Card style={styles.teamCard} onPress={() => router.push('/(tabs)/obrador/envios')}>
+            <View style={[styles.iconTile, { backgroundColor: Colors.secondaryTint }]}>
+              <MaterialIcons name="local-shipping" size={26} color={Colors.secondary} />
+            </View>
+            <View style={styles.enviosInfo}>
+              <Text style={[styles.teamName, styles.enviosTitle]}>Envíos</Text>
+              <Text style={styles.enviosDetail}>Reparto de la nave a las tiendas y recepción</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={26} color={Colors.textMuted} />
+          </Card>
+        </>
       )}
     </Screen>
   );
@@ -112,5 +126,16 @@ const styles = StyleSheet.create({
     ...Typography.headingMedium,
     color: Colors.textPrimary,
     flex: 1,
+  },
+  enviosInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  enviosTitle: {
+    flex: 0,
+  },
+  enviosDetail: {
+    ...Typography.bodySmall,
+    color: Colors.textMuted,
   },
 });
