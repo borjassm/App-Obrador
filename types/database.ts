@@ -382,6 +382,165 @@ export type Database = {
           },
         ]
       }
+      production_teams: {
+        Row: {
+          created_at: string
+          display_order: number
+          id: string
+          is_active: boolean
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          display_order?: number
+          id?: string
+          is_active?: boolean
+          name: string
+        }
+        Update: {
+          created_at?: string
+          display_order?: number
+          id?: string
+          is_active?: boolean
+          name?: string
+        }
+        Relationships: []
+      }
+      team_production_items: {
+        Row: {
+          created_at: string
+          display_order: number
+          id: string
+          is_active: boolean
+          item_type: string
+          name: string
+          notes: string | null
+          product_id: string | null
+          team_id: string
+          unit: string
+        }
+        Insert: {
+          created_at?: string
+          display_order?: number
+          id?: string
+          is_active?: boolean
+          item_type?: string
+          name: string
+          notes?: string | null
+          product_id?: string | null
+          team_id: string
+          unit?: string
+        }
+        Update: {
+          created_at?: string
+          display_order?: number
+          id?: string
+          is_active?: boolean
+          item_type?: string
+          name?: string
+          notes?: string | null
+          product_id?: string | null
+          team_id?: string
+          unit?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_production_items_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "production_teams"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "team_production_items_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      team_item_locations: {
+        Row: {
+          item_id: string
+          location_id: string
+        }
+        Insert: {
+          item_id: string
+          location_id: string
+        }
+        Update: {
+          item_id?: string
+          location_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_item_locations_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "team_production_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "team_item_locations_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      team_production_entries: {
+        Row: {
+          comment: string | null
+          created_at: string
+          id: string
+          item_id: string
+          location_id: string
+          planned_qty: number | null
+          produced_qty: number | null
+          production_date: string
+          updated_at: string
+        }
+        Insert: {
+          comment?: string | null
+          created_at?: string
+          id?: string
+          item_id: string
+          location_id: string
+          planned_qty?: number | null
+          produced_qty?: number | null
+          production_date: string
+          updated_at?: string
+        }
+        Update: {
+          comment?: string | null
+          created_at?: string
+          id?: string
+          item_id?: string
+          location_id?: string
+          planned_qty?: number | null
+          produced_qty?: number | null
+          production_date?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_production_entries_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "team_production_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "team_production_entries_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       production_plans: {
         Row: {
           confidence: string | null

@@ -9,8 +9,8 @@ import { useRole } from '@/hooks/useRole';
 import { useSession } from '@/hooks/useSession';
 
 // Pestañas visibles para el rol empleado (usuario genérico del obrador):
-// registra el día a día y consulta el plan; sin ventas, analítica ni costes
-const EMPLOYEE_TABS = new Set(['index', 'obrador', 'planning/index', 'settings/index']);
+// su plan del día vive dentro de Obrador; sin ventas, analítica ni costes
+const EMPLOYEE_TABS = new Set(['index', 'obrador', 'settings/index']);
 
 type TabIcon = {
   label: string;
@@ -34,7 +34,7 @@ const TAB_ICONS: Record<string, TabIcon> = {
     label: 'Analítica',
     render: (color, size) => <MaterialIcons name="insert-chart" size={size} color={color} />,
   },
-  'planning/index': {
+  planning: {
     label: 'Plan',
     render: (color, size) => <MaterialIcons name="event-note" size={size} color={color} />,
   },
@@ -165,7 +165,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="obrador" options={{ title: 'Obrador' }} />
       <Tabs.Screen name="ventas/index" options={{ title: 'Ventas' }} />
       <Tabs.Screen name="dashboard/index" options={{ title: 'Analítica' }} />
-      <Tabs.Screen name="planning/index" options={{ title: 'Plan' }} />
+      <Tabs.Screen name="planning" options={{ title: 'Plan' }} />
       <Tabs.Screen name="costes/index" options={{ title: 'Costes' }} />
       <Tabs.Screen name="settings/index" options={{ title: 'Ajustes' }} />
 
