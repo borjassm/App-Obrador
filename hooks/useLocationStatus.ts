@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 
+import { leftoversDayISO } from '@/lib/workday';
 import { supabase } from '@/lib/supabase';
 
+// none   → nadie ha guardado sobrantes hoy
+// open   → hay sobrantes guardados (cuenta como registrado aunque no se cierre)
+// closed → alguien pulsó "Cerrar el día"
 export type SessionStatus = 'none' | 'open' | 'closed';
 
 interface LocationSessionInfo {
@@ -9,11 +13,6 @@ interface LocationSessionInfo {
   status: SessionStatus;
   entryCount: number;
   totalProducts: number;
-}
-
-function todayISO(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 export function useLocationStatus(locationId: string | undefined) {
@@ -29,36 +28,37 @@ export function useLocationStatus(locationId: string | undefined) {
     if (!locationId) return;
     setLoading(true);
 
-    const date = todayISO();
-
-    // Get today's session for this location
     const { data: session } = await supabase
       .from('daily_sessions')
       .select('id, status')
       .eq('location_id', locationId)
-      .eq('session_date', date)
+      .eq('session_date', leftoversDayISO())
       .maybeSingle();
 
-    // Count entries if session exists
+    // Solo cuentan los productos con algo guardado o tirado (las líneas a
+    // cero y los días abiertos sin datos no significan "registrado")
     let entryCount = 0;
     if (session) {
       const { count } = await supabase
         .from('daily_product_entries')
         .select('id', { count: 'exact', head: true })
-        .eq('daily_session_id', session.id);
+        .eq('daily_session_id', session.id)
+        .or('saved_qty.gt.0,discarded_qty.gt.0');
       entryCount = count ?? 0;
     }
 
-    // Total de productos de obrador (los que se registran en sobrantes)
     const { count: totalProducts } = await supabase
       .from('products')
       .select('id', { count: 'exact', head: true })
       .eq('is_active', true)
       .eq('is_obrador', true);
 
+    const status: SessionStatus =
+      session?.status === 'closed' ? 'closed' : entryCount > 0 ? 'open' : 'none';
+
     setInfo({
       sessionId: session?.id ?? null,
-      status: session ? (session.status as SessionStatus) : 'none',
+      status,
       entryCount,
       totalProducts: totalProducts ?? 0,
     });

@@ -27,10 +27,18 @@ interface ChipSpec {
   color: string;
 }
 
+// open = hay sobrantes guardados hoy (ya cuenta como registrado);
+// closed = además alguien pulsó "Cerrar el día"
 const STATUS_CHIP: Record<LocationStatus, ChipSpec> = {
-  closed: { label: 'Registrado', icon: 'check-circle', bg: Colors.successLight, color: Colors.success },
-  open: { label: 'En curso', icon: 'schedule', bg: Colors.warningLight, color: Colors.warning },
+  closed: { label: 'Día cerrado', icon: 'check-circle', bg: Colors.successLight, color: Colors.success },
+  open: { label: 'Registrado', icon: 'check-circle', bg: Colors.successLight, color: Colors.success },
   none: { label: 'Pendiente', icon: 'schedule', bg: Colors.borderLight, color: Colors.textSecondary },
+};
+
+const CTA_LABEL: Record<LocationStatus, string> = {
+  closed: 'Ver resumen del día',
+  open: 'Continuar registro',
+  none: 'Registrar sobrantes',
 };
 
 function formatLocationName(name: string): string {
@@ -94,7 +102,7 @@ export default function LocationCard({
               ]}
             >
               <Text style={[styles.ctaLabel, isClosed ? styles.ctaLabelSecondary : styles.ctaLabelPrimary]}>
-                {isClosed ? 'Ver resumen del día' : 'Continuar registro'}
+                {CTA_LABEL[status]}
               </Text>
               {!isClosed && (
                 <MaterialIcons name="arrow-forward" size={20} color={Colors.textOnPrimary} />

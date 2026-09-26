@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useSession } from '@/hooks/useSession';
+import { leftoversDayISO } from '@/lib/workday';
 import { sessionService } from '@/services/session.service';
 import { productService, type Product, type ProductGroup } from '@/services/product.service';
 
@@ -10,11 +11,14 @@ export interface ProductEntry {
   discardedQty: number;
   comment: string;
   dirty: boolean;
+  /** Ya existe una fila en BD para este producto y día */
+  inDb: boolean;
 }
 
 interface UseProductEntriesReturn {
   sessionId: string | null;
   sessionStatus: string;
+  dayISO: string;
   groups: ProductGroup[];
   entries: Map<string, ProductEntry>;
   loading: boolean;
@@ -34,17 +38,21 @@ interface UseProductEntriesReturn {
   totalCount: number;
 }
 
-function todayISO(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+function isEmpty(e: Pick<ProductEntry, 'savedQty' | 'discardedQty' | 'comment'>): boolean {
+  return e.savedQty === 0 && e.discardedQty === 0 && e.comment.trim() === '';
 }
 
-// Registro de sobrantes: los cambios se acumulan en local (marcados dirty) y
-// se persisten todos juntos con saveAll() — el botón "Guardar" de la lista.
+// Registro de sobrantes. Reglas para no ensuciar la BD:
+// - El día (daily_sessions) no se crea al abrir la pantalla, solo al guardar.
+// - No se guardan líneas vacías (0 guardado, 0 tirado, sin comentario) salvo
+//   que ya existieran (entonces se ponen a 0 para reflejar la corrección).
+// - El día de trabajo cierra a las 5:00 (lib/workday).
+// Los cambios se acumulan en local y se persisten juntos con saveAll().
 export function useProductEntries(locationId: string): UseProductEntriesReturn {
   const { session } = useSession();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionStatus, setSessionStatus] = useState('none');
+  const [dayISO, setDayISO] = useState(() => leftoversDayISO());
   const [groups, setGroups] = useState<ProductGroup[]>([]);
   const [entries, setEntries] = useState<Map<string, ProductEntry>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -52,52 +60,57 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
 
   const entriesRef = useRef(entries);
   useEffect(() => { entriesRef.current = entries; }, [entries]);
-  // Ubicación a la que pertenecen las entradas en memoria (la pantalla sigue
-  // montada al cambiar de tienda: no arrastrar cambios de otra ubicación)
-  const loadedLocationRef = useRef<string | null>(null);
+  const sessionIdRef = useRef(sessionId);
+  useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
+  // Ubicación+día a los que pertenecen las entradas en memoria (la pantalla
+  // sigue montada al cambiar de tienda o al pasar el corte de las 5:00)
+  const loadedKeyRef = useRef<string | null>(null);
 
   const load = useCallback(async (showSpinner: boolean) => {
     if (!locationId || !session?.user.id) return;
-    const locationChanged = loadedLocationRef.current !== locationId;
-    if (locationChanged) {
+    const day = leftoversDayISO();
+    const key = `${locationId}_${day}`;
+    const keyChanged = loadedKeyRef.current !== key;
+    if (keyChanged) {
       entriesRef.current = new Map();
       setEntries(new Map());
     }
-    if (showSpinner || locationChanged) setLoading(true);
+    if (showSpinner || keyChanged) setLoading(true);
+    setDayISO(day);
 
-    const { data: sess } = await sessionService.openSession(locationId, todayISO(), session.user.id);
-    if (!sess) {
-      setLoading(false);
-      return;
-    }
-    setSessionId(sess.id);
-    setSessionStatus(sess.status);
-
-    const productGroups = await productService.listGroupedByFamily();
+    const [existingSession, productGroups] = await Promise.all([
+      sessionService.getSessionStatus(locationId, day),
+      productService.listGroupedByFamily(),
+    ]);
+    setSessionId(existingSession?.id ?? null);
+    setSessionStatus(existingSession?.status ?? 'none');
     setGroups(productGroups);
 
-    const { entries: existingEntries } = await sessionService.getSessionWithEntries(sess.id);
+    const existingEntries = existingSession
+      ? (await sessionService.getSessionWithEntries(existingSession.id)).entries
+      : [];
 
     // Sin pisar cambios locales pendientes de guardar
     const prevEntries = entriesRef.current;
     const entryMap = new Map<string, ProductEntry>();
     for (const product of productGroups.flatMap((g) => g.products)) {
+      const existing = existingEntries.find((e) => e.product_id === product.id);
       const local = prevEntries.get(product.id);
       if (local?.dirty) {
-        entryMap.set(product.id, local);
+        entryMap.set(product.id, { ...local, inDb: !!existing });
         continue;
       }
-      const existing = existingEntries.find((e) => e.product_id === product.id);
       entryMap.set(product.id, {
         product,
         savedQty: existing?.saved_qty ?? 0,
         discardedQty: existing?.discarded_qty ?? 0,
         comment: existing?.comment ?? '',
         dirty: false,
+        inDb: !!existing,
       });
     }
 
-    loadedLocationRef.current = locationId;
+    loadedKeyRef.current = key;
     setEntries(entryMap);
     setLoading(false);
   }, [locationId, session?.user.id]);
@@ -135,23 +148,46 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
     [patchEntry]
   );
 
-  // Persiste todas las entradas con cambios pendientes
+  // Devuelve el id del día, creándolo si aún no existe
+  const ensureSession = useCallback(async (): Promise<string | null> => {
+    if (sessionIdRef.current) return sessionIdRef.current;
+    if (!session?.user.id) return null;
+    const { data } = await sessionService.openSession(locationId, dayISO, session.user.id);
+    if (!data) return null;
+    sessionIdRef.current = data.id;
+    setSessionId(data.id);
+    setSessionStatus(data.status);
+    return data.id;
+  }, [locationId, dayISO, session?.user.id]);
+
+  // Persiste las entradas con cambios pendientes
   const saveAll = useCallback(async (): Promise<{ error: string | null }> => {
-    if (!sessionId) return { error: 'No hay sesión abierta.' };
     const pending = [...entriesRef.current.entries()].filter(([, e]) => e.dirty);
     if (pending.length === 0) return { error: null };
+
+    // Líneas vacías que nunca se guardaron: basta con limpiar su marca
+    const toWrite = pending.filter(([, e]) => !(isEmpty(e) && !e.inDb));
+    const skipped = pending.filter(([, e]) => isEmpty(e) && !e.inDb).map(([id]) => id);
 
     setSaving(true);
     const savedIds: string[] = [];
     let failed = false;
-    for (const [productId, entry] of pending) {
-      const { error } = await sessionService.upsertSingleEntry(
-        sessionId, productId, entry.savedQty, entry.discardedQty, entry.comment
-      );
-      if (error) {
-        failed = true;
-      } else {
-        savedIds.push(productId);
+
+    if (toWrite.length > 0) {
+      const sid = await ensureSession();
+      if (!sid) {
+        setSaving(false);
+        return { error: 'No se pudo abrir el registro del día. Revisa la conexión.' };
+      }
+      for (const [productId, entry] of toWrite) {
+        const { error } = await sessionService.upsertSingleEntry(
+          sid, productId, entry.savedQty, entry.discardedQty, entry.comment
+        );
+        if (error) {
+          failed = true;
+        } else {
+          savedIds.push(productId);
+        }
       }
     }
 
@@ -159,24 +195,29 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
       const next = new Map(prev);
       for (const id of savedIds) {
         const e = next.get(id);
+        if (e) next.set(id, { ...e, dirty: false, inDb: true });
+      }
+      for (const id of skipped) {
+        const e = next.get(id);
         if (e) next.set(id, { ...e, dirty: false });
       }
       return next;
     });
     setSaving(false);
     return { error: failed ? 'Algunos productos no se pudieron guardar. Inténtalo de nuevo.' : null };
-  }, [sessionId]);
+  }, [ensureSession]);
 
   const closeDay = useCallback(async () => {
-    if (!sessionId) return { error: new Error('No session') };
-
     const { error: saveError } = await saveAll();
     if (saveError) return { error: new Error(saveError) };
 
-    const { error } = await sessionService.closeSession(sessionId);
+    const sid = await ensureSession();
+    if (!sid) return { error: new Error('No se pudo abrir el registro del día.') };
+
+    const { error } = await sessionService.closeSession(sid);
     if (!error) setSessionStatus('closed');
     return { error: error ? new Error(String(error)) : null };
-  }, [sessionId, saveAll]);
+  }, [saveAll, ensureSession]);
 
   const reopenDay = useCallback(async () => {
     if (!sessionId) return { error: new Error('No session') };
@@ -211,6 +252,7 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
   return {
     sessionId,
     sessionStatus,
+    dayISO,
     groups,
     entries,
     loading,

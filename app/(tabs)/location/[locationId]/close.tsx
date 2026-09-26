@@ -51,6 +51,7 @@ export default function SobrantesScreen() {
 
   const {
     sessionStatus,
+    dayISO,
     groups,
     entries,
     loading,
@@ -104,7 +105,7 @@ export default function SobrantesScreen() {
   );
 
   const display = getLocationDisplay(locationName);
-  const dateLabel = new Date().toLocaleDateString('es-ES', {
+  const dateLabel = new Date(dayISO + 'T12:00:00').toLocaleDateString('es-ES', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',

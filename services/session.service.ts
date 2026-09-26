@@ -1,9 +1,5 @@
-import { supabase } from '@/lib/supabase';
-
-function todayISO(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+﻿import { supabase } from '@/lib/supabase';
+import { leftoversDayISO } from '@/lib/workday';
 
 const SESSION_COLS = 'id, location_id, session_date, status, created_at' as const;
 
@@ -28,7 +24,7 @@ export const sessionService = {
   },
 
   async getSessionStatus(locationId: string, date?: string) {
-    const d = date ?? todayISO();
+    const d = date ?? leftoversDayISO();
     const { data } = await supabase
       .from('daily_sessions')
       .select('id, status')
