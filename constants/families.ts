@@ -22,6 +22,30 @@ export function compareFamilies(a: string, b: string): number {
   return ia - ib;
 }
 
+// Secciones del registro de sobrantes (products.leftovers_family), en el orden
+// de las plantillas Excel LEFT OVERS del cliente. Dentro de cada sección manda
+// products.leftovers_order. Los productos de obrador sin sección van a 'Otros'.
+export const LEFTOVERS_SECTIONS = ['Pan', 'Pasteles', 'Salados', 'Tartas', 'Quiche', 'Navidad'] as const;
+export const LEFTOVERS_OTHER = 'Otros';
+
+// Familia de producción que recibe un producto puntual creado desde sobrantes
+export const LEFTOVERS_SECTION_FAMILY: Record<string, string> = {
+  Pan: 'panaderia',
+  Pasteles: 'bolleria',
+  Salados: 'salado',
+  Tartas: 'dulce',
+  Quiche: 'salado',
+  Navidad: 'navidad',
+};
+
+export function compareLeftoversSections(a: string, b: string): number {
+  const rank = (s: string) => {
+    const i = (LEFTOVERS_SECTIONS as readonly string[]).indexOf(s);
+    return i === -1 ? LEFTOVERS_SECTIONS.length : i;
+  };
+  return rank(a) - rank(b) || a.localeCompare(b);
+}
+
 // Temporada de navidad: noviembre a enero. Fuera de temporada, las pantallas
 // colapsan (o despriorizan) la familia 'navidad'.
 export function isNavidadSeason(date: Date = new Date()): boolean {

@@ -157,7 +157,8 @@ export const TABLET_BREAKPOINT = 768;
 
 export function getFamilyColor(family: string): string {
   switch (family.toLowerCase()) {
-    case 'panaderia': return Colors.familyPanaderia;
+    case 'panaderia':
+    case 'pan': return Colors.familyPanaderia;
     case 'laminado': return Colors.familyLaminado;
     case 'navidad': return Colors.familyNavidad;
     default: return Colors.primaryLight;

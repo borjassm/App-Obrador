@@ -700,6 +700,7 @@ export type Database = {
           is_custom: boolean | null
           is_obrador: boolean
           leftovers_family: string | null
+          leftovers_order: number | null
           name: string
           sale_price: number | null
         }
@@ -712,6 +713,7 @@ export type Database = {
           is_custom?: boolean | null
           is_obrador?: boolean
           leftovers_family?: string | null
+          leftovers_order?: number | null
           name: string
           sale_price?: number | null
         }
@@ -724,6 +726,7 @@ export type Database = {
           is_custom?: boolean | null
           is_obrador?: boolean
           leftovers_family?: string | null
+          leftovers_order?: number | null
           name?: string
           sale_price?: number | null
         }

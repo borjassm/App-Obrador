@@ -21,7 +21,7 @@ import InlineCounter from '@/components/InlineCounter';
 import ProgressPill from '@/components/ProgressPill';
 import { Screen } from '@/components/Screen';
 import SectionHeader from '@/components/SectionHeader';
-import { FAMILY_ORDER } from '@/constants/families';
+import { LEFTOVERS_SECTIONS } from '@/constants/families';
 import { getLocationDisplay } from '@/constants/locations';
 import { Colors, Fonts, Radius, Shadows, Spacing, TABLET_BREAKPOINT, Typography } from '@/constants/theme';
 import { useProductEntries, type ProductEntry } from '@/hooks/useProductEntries';
@@ -80,7 +80,7 @@ export default function SobrantesScreen() {
   // Alta manual de producto puntual
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [newProductName, setNewProductName] = useState('');
-  const [newProductFamily, setNewProductFamily] = useState<string>('panaderia');
+  const [newProductFamily, setNewProductFamily] = useState<string>(LEFTOVERS_SECTIONS[0]);
   const [addingProduct, setAddingProduct] = useState(false);
 
   const isClosed = sessionStatus === 'closed';
@@ -456,7 +456,7 @@ export default function SobrantesScreen() {
               autoFocus
             />
             <View style={styles.modalFamilies}>
-              {FAMILY_ORDER.filter((f) => f !== 'otros').map((family) => (
+              {LEFTOVERS_SECTIONS.map((family) => (
                 <Pressable
                   key={family}
                   onPress={() => setNewProductFamily(family)}

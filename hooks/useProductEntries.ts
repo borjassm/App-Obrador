@@ -31,7 +31,7 @@ interface UseProductEntriesReturn {
   closeDay: () => Promise<{ error: Error | null }>;
   reopenDay: () => Promise<{ error: Error | null }>;
   refresh: () => Promise<void>;
-  addCustomProduct: (name: string, family: string) => Promise<{ error: string | null }>;
+  addCustomProduct: (name: string, section: string) => Promise<{ error: string | null }>;
   totalSobrantes: number;
   totalDescartado: number;
   filledCount: number;
@@ -80,7 +80,7 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
 
     const [existingSession, productGroups] = await Promise.all([
       sessionService.getSessionStatus(locationId, day),
-      productService.listGroupedByFamily(),
+      productService.listForLeftovers(),
     ]);
     setSessionId(existingSession?.id ?? null);
     setSessionStatus(existingSession?.status ?? 'none');
@@ -226,8 +226,8 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
     return { error: error ? new Error(String(error)) : null };
   }, [sessionId]);
 
-  const addCustomProduct = useCallback(async (name: string, family: string) => {
-    const { error } = await productService.createCustom(name, family);
+  const addCustomProduct = useCallback(async (name: string, section: string) => {
+    const { error } = await productService.createCustom(name, section);
     if (error) {
       const message = error.code === '23505'
         ? 'Ya existe un producto con ese nombre.'
