@@ -9,8 +9,8 @@ import { useRole } from '@/hooks/useRole';
 import { useSession } from '@/hooks/useSession';
 
 // Pestañas visibles para el rol empleado (usuario genérico del obrador):
-// su plan del día vive dentro de Obrador; sin ventas, analítica ni costes
-const EMPLOYEE_TABS = new Set(['index', 'obrador', 'settings/index']);
+// solo Inicio (sobrantes) y Obrador; cierra sesión desde el avatar de Inicio
+const EMPLOYEE_TABS = new Set(['index', 'obrador']);
 
 type TabIcon = {
   label: string;

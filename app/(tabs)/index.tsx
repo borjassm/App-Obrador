@@ -1,20 +1,27 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 
 import Button from '@/components/Button';
-import Card from '@/components/Card';
 import LocationCard from '@/components/LocationCard';
 import { Screen } from '@/components/Screen';
-import SectionHeader from '@/components/SectionHeader';
 import { Colors, Fonts, Radius, Spacing, TABLET_BREAKPOINT, Typography } from '@/constants/theme';
-import { useAnalytics } from '@/hooks/useAnalytics';
 import { useGreeting } from '@/hooks/useGreeting';
 import { useLocationStatus } from '@/hooks/useLocationStatus';
-import { usePlanningData } from '@/hooks/usePlanningData';
 import { useRole } from '@/hooks/useRole';
 import { useSession } from '@/hooks/useSession';
+import { analyticsService } from '@/services/analytics.service';
+import { authService } from '@/services/auth.service';
 import { locationService } from '@/services/location.service';
 
 interface LocationRow {
@@ -53,8 +60,7 @@ function initials(name: string): string {
 function LocationCardWithStatus({ location, isTablet }: { location: LocationRow; isTablet: boolean }) {
   const { status, entryCount, totalProducts, refresh } = useLocationStatus(location.id);
 
-  // Refrescar al volver a Inicio: el estado cambia mientras se registra en
-  // otras pantallas (era el bug de "Pendiente" perpetuo)
+  // Refrescar al volver a Inicio: el estado cambia mientras se registra
   useFocusEffect(
     useCallback(() => {
       refresh();
@@ -69,28 +75,8 @@ function LocationCardWithStatus({ location, isTablet }: { location: LocationRow;
       totalProducts={totalProducts}
       tablet={isTablet}
       compact={!isTablet && status === 'closed'}
-      onPress={() => router.push(`/(tabs)/location/${location.id}`)}
+      onPress={() => router.push(`/(tabs)/location/${location.id}/close`)}
     />
-  );
-}
-
-interface KpiCardProps {
-  icon: keyof typeof MaterialIcons.glyphMap;
-  iconColor: string;
-  value: string;
-  description: string;
-  horizontal?: boolean;
-}
-
-function KpiCard({ icon, iconColor, value, description, horizontal }: KpiCardProps) {
-  return (
-    <Card style={StyleSheet.flatten([styles.kpiCard, horizontal && styles.kpiCardHorizontal])}>
-      <MaterialIcons name={icon} size={horizontal ? 24 : 20} color={iconColor} />
-      <View style={styles.kpiText}>
-        <Text style={horizontal ? styles.kpiValue : styles.kpiValueSmall}>{value}</Text>
-        <Text style={horizontal ? styles.kpiDesc : styles.kpiDescSmall}>{description}</Text>
-      </View>
-    </Card>
   );
 }
 
@@ -104,22 +90,16 @@ export default function HomeTab() {
   const [locations, setLocations] = useState<LocationRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const { plans, loading: planLoading } = usePlanningData();
-  const { data: analytics } = useAnalytics();
+  const [salesDate, setSalesDate] = useState<string | null>(null);
 
   const userEmail = session?.user?.email ?? '';
   const userName = capitalize(userEmail.split('@')[0] ?? '');
 
-  const totalPlanned = plans.reduce((sum, p) => sum + p.suggested, 0);
-  const salesDate = shortDate(analytics?.anchorSale);
-  const lastDay =
-    analytics?.series && analytics.series.length > 0
-      ? analytics.series[analytics.series.length - 1]
-      : null;
-  const lastRevenue = lastDay
-    ? `${Math.round(lastDay.revenue).toLocaleString('es-ES', { maximumFractionDigits: 0 })} €`
-    : '—';
+  // Chip "Ventas al día" (solo admin, tablet)
+  useEffect(() => {
+    if (!isAdmin) return;
+    analyticsService.latestDates().then((d) => setSalesDate(shortDate(d?.latest_sale)));
+  }, [isAdmin]);
 
   const loadLocations = useCallback(async () => {
     setLoading(true);
@@ -127,13 +107,11 @@ export default function HomeTab() {
     try {
       const { data, error: supaError } = await locationService.listAll();
       if (supaError) {
-        console.log('[HomeTab] Supabase error:', supaError);
         setError(supaError.message ?? 'Error al cargar ubicaciones');
       } else {
         setLocations(data ?? []);
       }
-    } catch (e) {
-      console.log('[HomeTab] Exception:', e);
+    } catch {
       setError('Error de conexión');
     } finally {
       setLoading(false);
@@ -144,9 +122,27 @@ export default function HomeTab() {
     loadLocations();
   }, [loadLocations]);
 
+  // Admin → Ajustes; empleado (no tiene Ajustes) → cerrar sesión
+  const handleAvatar = () => {
+    if (isAdmin) {
+      router.push('/(tabs)/settings');
+      return;
+    }
+    const doLogout = () => {
+      authService.signOut();
+    };
+    if (Platform.OS === 'web') {
+      if (window.confirm('¿Cerrar sesión?')) doLogout();
+      return;
+    }
+    Alert.alert('Cerrar sesión', `Sesión iniciada como ${userEmail}`, [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Cerrar sesión', style: 'destructive', onPress: doLogout },
+    ]);
+  };
+
   return (
     <Screen scrollable>
-      {/* Header: fecha + saludo · chip de sincronización (tablet) o avatar (móvil) */}
       <View style={[styles.headerRow, isTablet ? styles.headerRowTablet : styles.headerRowMobile]}>
         <View style={styles.headerText}>
           <Text style={[styles.date, !isTablet && styles.dateMobile]}>{todayLongDate()}</Text>
@@ -164,8 +160,8 @@ export default function HomeTab() {
           </View>
         ) : (
           <Pressable
-            onPress={() => router.push('/(tabs)/settings')}
-            accessibilityLabel="Ajustes"
+            onPress={handleAvatar}
+            accessibilityLabel={isAdmin ? 'Ajustes' : 'Cerrar sesión'}
             style={({ pressed }) => [styles.avatar, pressed && styles.avatarPressed]}
           >
             <Text style={styles.avatarText}>{initials(userName)}</Text>
@@ -173,7 +169,6 @@ export default function HomeTab() {
         )}
       </View>
 
-      {/* Loading */}
       {loading && (
         <View style={styles.center}>
           <ActivityIndicator size="large" color={Colors.primary} />
@@ -181,7 +176,6 @@ export default function HomeTab() {
         </View>
       )}
 
-      {/* Error */}
       {!loading && error && (
         <View style={styles.center}>
           <MaterialIcons name="error-outline" size={48} color={Colors.textMuted} />
@@ -190,7 +184,6 @@ export default function HomeTab() {
         </View>
       )}
 
-      {/* Empty */}
       {!loading && !error && locations.length === 0 && (
         <View style={styles.center}>
           <MaterialIcons name="location-off" size={48} color={Colors.textMuted} />
@@ -198,7 +191,6 @@ export default function HomeTab() {
         </View>
       )}
 
-      {/* Tarjetas de ubicación: grid 2 columnas (1b) / una columna (1g) */}
       {!loading && !error && locations.length > 0 && (
         <View style={[styles.cards, isTablet && styles.cardsTablet]}>
           {locations.map((loc) => (
@@ -206,47 +198,6 @@ export default function HomeTab() {
               <LocationCardWithStatus location={loc} isTablet={isTablet} />
             </View>
           ))}
-        </View>
-      )}
-
-      {/* Mini-KPIs de hoy (solo admin: usan ventas y plan) */}
-      {!isAdmin ? null : isTablet ? (
-        <View>
-          <SectionHeader title="Hoy en el obrador" />
-          <View style={styles.kpiRowTablet}>
-            <KpiCard
-              icon="event-note"
-              iconColor={Colors.secondary}
-              value={planLoading ? '—' : `${totalPlanned.toLocaleString('es-ES')} uds`}
-              description="plan de producción de hoy"
-              horizontal
-            />
-            <KpiCard
-              icon="payments"
-              iconColor={Colors.primary}
-              value={lastRevenue}
-              description={salesDate ? `ventas del ${salesDate}` : 'ventas de ayer'}
-              horizontal
-            />
-          </View>
-        </View>
-      ) : (
-        <View>
-          <SectionHeader title="Hoy" />
-          <View style={styles.kpiRowMobile}>
-            <KpiCard
-              icon="event-note"
-              iconColor={Colors.secondary}
-              value={planLoading ? '—' : `${totalPlanned.toLocaleString('es-ES')} uds`}
-              description="plan de hoy"
-            />
-            <KpiCard
-              icon="payments"
-              iconColor={Colors.primary}
-              value={lastRevenue}
-              description={salesDate ? `ventas ${salesDate}` : 'ventas de ayer'}
-            />
-          </View>
         </View>
       )}
     </Screen>
@@ -330,54 +281,6 @@ const styles = StyleSheet.create({
   cardCellTablet: {
     flexBasis: '47%',
     flexGrow: 1,
-  },
-  kpiRowTablet: {
-    flexDirection: 'row',
-    gap: Spacing.lg,
-  },
-  kpiRowMobile: {
-    flexDirection: 'row',
-    gap: Spacing.md,
-  },
-  kpiCard: {
-    flex: 1,
-    borderRadius: Radius.lg,
-    padding: Spacing.lg,
-    gap: Spacing.xs,
-  },
-  kpiCardHorizontal: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.lg,
-    paddingVertical: 20,
-    paddingHorizontal: 22,
-  },
-  kpiText: {
-    gap: 1,
-    flexShrink: 1,
-  },
-  kpiValue: {
-    ...Typography.numberSmall,
-    color: Colors.textPrimary,
-  },
-  kpiValueSmall: {
-    fontFamily: Fonts.extraBold,
-    fontSize: 18,
-    lineHeight: 24,
-    fontVariant: ['tabular-nums'],
-    color: Colors.textPrimary,
-  },
-  kpiDesc: {
-    fontFamily: Fonts.semiBold,
-    fontSize: 12.5,
-    lineHeight: 17,
-    color: Colors.textMuted,
-  },
-  kpiDescSmall: {
-    fontFamily: Fonts.semiBold,
-    fontSize: 11.5,
-    lineHeight: 16,
-    color: Colors.textMuted,
   },
   center: {
     alignItems: 'center',

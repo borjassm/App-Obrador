@@ -19,10 +19,11 @@ interface UseProductEntriesReturn {
   entries: Map<string, ProductEntry>;
   loading: boolean;
   saving: boolean;
+  dirtyCount: number;
   updateEntry: (productId: string, value: number) => void;
   updateDiscarded: (productId: string, value: number) => void;
   updateComment: (productId: string, value: string) => void;
-  saveEntry: (productId: string) => Promise<void>;
+  saveAll: () => Promise<{ error: string | null }>;
   closeDay: () => Promise<{ error: Error | null }>;
   reopenDay: () => Promise<{ error: Error | null }>;
   refresh: () => Promise<void>;
@@ -38,6 +39,8 @@ function todayISO(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// Registro de sobrantes: los cambios se acumulan en local (marcados dirty) y
+// se persisten todos juntos con saveAll() — el botón "Guardar" de la lista.
 export function useProductEntries(locationId: string): UseProductEntriesReturn {
   const { session } = useSession();
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -47,19 +50,21 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // Debounce refs for auto-save
-  const debounceTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const entriesRef = useRef(entries);
-  const sessionIdRef = useRef(sessionId);
-
   useEffect(() => { entriesRef.current = entries; }, [entries]);
-  useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
+  // Ubicación a la que pertenecen las entradas en memoria (la pantalla sigue
+  // montada al cambiar de tienda: no arrastrar cambios de otra ubicación)
+  const loadedLocationRef = useRef<string | null>(null);
 
   const load = useCallback(async (showSpinner: boolean) => {
     if (!locationId || !session?.user.id) return;
-    if (showSpinner) setLoading(true);
+    const locationChanged = loadedLocationRef.current !== locationId;
+    if (locationChanged) {
+      entriesRef.current = new Map();
+      setEntries(new Map());
+    }
+    if (showSpinner || locationChanged) setLoading(true);
 
-    // Ensure session exists
     const { data: sess } = await sessionService.openSession(locationId, todayISO(), session.user.id);
     if (!sess) {
       setLoading(false);
@@ -68,19 +73,15 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
     setSessionId(sess.id);
     setSessionStatus(sess.status);
 
-    // Load products grouped by family
     const productGroups = await productService.listGroupedByFamily();
     setGroups(productGroups);
 
-    // Load existing entries
     const { entries: existingEntries } = await sessionService.getSessionWithEntries(sess.id);
 
-    // Build entries map — sin pisar cambios locales pendientes de guardar
+    // Sin pisar cambios locales pendientes de guardar
     const prevEntries = entriesRef.current;
     const entryMap = new Map<string, ProductEntry>();
-    const allProducts = productGroups.flatMap((g) => g.products);
-
-    for (const product of allProducts) {
+    for (const product of productGroups.flatMap((g) => g.products)) {
       const local = prevEntries.get(product.id);
       if (local?.dirty) {
         entryMap.set(product.id, local);
@@ -96,128 +97,86 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
       });
     }
 
+    loadedLocationRef.current = locationId;
     setEntries(entryMap);
     setLoading(false);
   }, [locationId, session?.user.id]);
 
-  // Initialize: ensure session exists and load products + existing entries
   useEffect(() => {
     load(true);
   }, [load]);
 
-  // Recarga silenciosa (al recuperar el foco: otra pantalla pudo guardar datos)
   const refresh = useCallback(async () => {
     await load(false);
   }, [load]);
 
-  // Persist one product's entry (saved + discarded) after a debounce
-  const scheduleUpsert = useCallback((productId: string) => {
-    const existingTimer = debounceTimers.current.get(productId);
-    if (existingTimer) clearTimeout(existingTimer);
-
-    debounceTimers.current.set(productId, setTimeout(async () => {
-      const sid = sessionIdRef.current;
-      const currentEntries = entriesRef.current;
-      const entry = currentEntries.get(productId);
-      if (!sid || !entry) return;
-
-      setSaving(true);
-      await sessionService.upsertSingleEntry(
-        sid, productId, entry.savedQty, entry.discardedQty, entry.comment
-      );
-
-      setEntries((prev) => {
-        const next = new Map(prev);
-        const e = next.get(productId);
-        if (e) next.set(productId, { ...e, dirty: false });
-        return next;
-      });
-      setSaving(false);
-      debounceTimers.current.delete(productId);
-    }, 500));
+  const patchEntry = useCallback((productId: string, patch: Partial<ProductEntry>) => {
+    setEntries((prev) => {
+      const entry = prev.get(productId);
+      if (!entry) return prev;
+      const next = new Map(prev);
+      next.set(productId, { ...entry, ...patch, dirty: true });
+      return next;
+    });
   }, []);
 
-  // Update saved value and schedule auto-save with debounce
-  const updateEntry = useCallback((productId: string, value: number) => {
-    setEntries((prev) => {
-      const next = new Map(prev);
-      const entry = next.get(productId);
-      if (entry) {
-        next.set(productId, { ...entry, savedQty: value, dirty: true });
-      }
-      return next;
-    });
-    scheduleUpsert(productId);
-  }, [scheduleUpsert]);
+  const updateEntry = useCallback(
+    (productId: string, value: number) => patchEntry(productId, { savedQty: value }),
+    [patchEntry]
+  );
 
-  // Update discarded value and schedule auto-save with debounce
-  const updateDiscarded = useCallback((productId: string, value: number) => {
-    setEntries((prev) => {
-      const next = new Map(prev);
-      const entry = next.get(productId);
-      if (entry) {
-        next.set(productId, { ...entry, discardedQty: value, dirty: true });
-      }
-      return next;
-    });
-    scheduleUpsert(productId);
-  }, [scheduleUpsert]);
+  const updateDiscarded = useCallback(
+    (productId: string, value: number) => patchEntry(productId, { discardedQty: value }),
+    [patchEntry]
+  );
 
-  const updateComment = useCallback((productId: string, value: string) => {
-    setEntries((prev) => {
-      const next = new Map(prev);
-      const entry = next.get(productId);
-      if (entry) {
-        next.set(productId, { ...entry, comment: value, dirty: true });
-      }
-      return next;
-    });
-    scheduleUpsert(productId);
-  }, [scheduleUpsert]);
+  const updateComment = useCallback(
+    (productId: string, value: string) => patchEntry(productId, { comment: value }),
+    [patchEntry]
+  );
 
-  // Guardado inmediato y explícito (botón "Guardar"): cancela el debounce y
-  // persiste ya, aunque la entrada no esté marcada como dirty
-  const saveEntry = useCallback(async (productId: string) => {
-    const sid = sessionIdRef.current;
-    const entry = entriesRef.current.get(productId);
-    if (!sid || !entry) return;
-
-    const timer = debounceTimers.current.get(productId);
-    if (timer) {
-      clearTimeout(timer);
-      debounceTimers.current.delete(productId);
-    }
+  // Persiste todas las entradas con cambios pendientes
+  const saveAll = useCallback(async (): Promise<{ error: string | null }> => {
+    if (!sessionId) return { error: 'No hay sesión abierta.' };
+    const pending = [...entriesRef.current.entries()].filter(([, e]) => e.dirty);
+    if (pending.length === 0) return { error: null };
 
     setSaving(true);
-    await sessionService.upsertSingleEntry(
-      sid, productId, entry.savedQty, entry.discardedQty, entry.comment
-    );
+    const savedIds: string[] = [];
+    let failed = false;
+    for (const [productId, entry] of pending) {
+      const { error } = await sessionService.upsertSingleEntry(
+        sessionId, productId, entry.savedQty, entry.discardedQty, entry.comment
+      );
+      if (error) {
+        failed = true;
+      } else {
+        savedIds.push(productId);
+      }
+    }
 
     setEntries((prev) => {
       const next = new Map(prev);
-      const e = next.get(productId);
-      if (e) next.set(productId, { ...e, dirty: false });
+      for (const id of savedIds) {
+        const e = next.get(id);
+        if (e) next.set(id, { ...e, dirty: false });
+      }
       return next;
     });
     setSaving(false);
-  }, []);
+    return { error: failed ? 'Algunos productos no se pudieron guardar. Inténtalo de nuevo.' : null };
+  }, [sessionId]);
 
   const closeDay = useCallback(async () => {
     if (!sessionId) return { error: new Error('No session') };
 
-    // Save all dirty entries first
-    for (const [productId, entry] of entries) {
-      if (entry.dirty) {
-        await sessionService.upsertSingleEntry(
-          sessionId, productId, entry.savedQty, entry.discardedQty, entry.comment
-        );
-      }
-    }
+    const { error: saveError } = await saveAll();
+    if (saveError) return { error: new Error(saveError) };
 
     const { error } = await sessionService.closeSession(sessionId);
     if (!error) setSessionStatus('closed');
     return { error: error ? new Error(String(error)) : null };
-  }, [sessionId, entries]);
+  }, [sessionId, saveAll]);
 
   const reopenDay = useCallback(async () => {
     if (!sessionId) return { error: new Error('No session') };
@@ -226,7 +185,6 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
     return { error: error ? new Error(String(error)) : null };
   }, [sessionId]);
 
-  // Producto puntual añadido a mano desde el cierre
   const addCustomProduct = useCallback(async (name: string, family: string) => {
     const { error } = await productService.createCustom(name, family);
     if (error) {
@@ -239,23 +197,15 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
     return { error: null };
   }, [load]);
 
-  // Cleanup debounce timers on unmount
-  useEffect(() => {
-    return () => {
-      for (const timer of debounceTimers.current.values()) {
-        clearTimeout(timer);
-      }
-    };
-  }, []);
-
-  // Computed
   let totalSobrantes = 0;
   let totalDescartado = 0;
   let filledCount = 0;
+  let dirtyCount = 0;
   for (const entry of entries.values()) {
     totalSobrantes += entry.savedQty;
     totalDescartado += entry.discardedQty;
     if (entry.savedQty > 0 || entry.discardedQty > 0) filledCount++;
+    if (entry.dirty) dirtyCount++;
   }
 
   return {
@@ -265,10 +215,11 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
     entries,
     loading,
     saving,
+    dirtyCount,
     updateEntry,
     updateDiscarded,
     updateComment,
-    saveEntry,
+    saveAll,
     closeDay,
     reopenDay,
     refresh,
