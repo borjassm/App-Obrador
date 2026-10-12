@@ -129,6 +129,19 @@ export async function importErpCsv(csvText: string, onProgress: ProgressFn): Pro
   }
   const prodMap = new Map<string, string>();
   for (const p of existingProds ?? []) prodMap.set(p.name.trim().toUpperCase(), p.id);
+  // Nombres antiguos de productos fusionados (p. ej. el nombre del TPV) siguen
+  // apuntando al producto que se quedó, para no recrear duplicados
+  const { data: aliases, error: aliasErr } = await supabase
+    .from('product_aliases')
+    .select('alias,product_id');
+  if (aliasErr) {
+    result.errors.push('No se pudieron leer los alias de productos: ' + aliasErr.message);
+    return result;
+  }
+  for (const a of aliases ?? []) {
+    const key = a.alias.trim().toUpperCase();
+    if (!prodMap.has(key)) prodMap.set(key, a.product_id);
+  }
 
   const newProdNames = [...new Set([...agg.values()].map((a) => a.product))].filter(
     (name) => !prodMap.has(name.toUpperCase())

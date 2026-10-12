@@ -21,7 +21,6 @@ import InlineCounter from '@/components/InlineCounter';
 import ProgressPill from '@/components/ProgressPill';
 import { Screen } from '@/components/Screen';
 import SectionHeader from '@/components/SectionHeader';
-import { LEFTOVERS_SECTIONS } from '@/constants/families';
 import { getLocationDisplay } from '@/constants/locations';
 import { Colors, Fonts, Radius, Shadows, Spacing, TABLET_BREAKPOINT, Typography } from '@/constants/theme';
 import { useProductEntries, type ProductEntry } from '@/hooks/useProductEntries';
@@ -53,6 +52,7 @@ export default function SobrantesScreen() {
     sessionStatus,
     dayISO,
     groups,
+    addableSections,
     entries,
     loading,
     saving,
@@ -80,7 +80,8 @@ export default function SobrantesScreen() {
   // Alta manual de producto puntual
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [newProductName, setNewProductName] = useState('');
-  const [newProductFamily, setNewProductFamily] = useState<string>(LEFTOVERS_SECTIONS[0]);
+  const [newProductFamily, setNewProductFamily] = useState('');
+  const selectedSection = newProductFamily || addableSections[0] || '';
   const [addingProduct, setAddingProduct] = useState(false);
 
   const isClosed = sessionStatus === 'closed';
@@ -172,7 +173,7 @@ export default function SobrantesScreen() {
   const handleAddProduct = async () => {
     if (!newProductName.trim() || addingProduct) return;
     setAddingProduct(true);
-    const { error } = await addCustomProduct(newProductName, newProductFamily);
+    const { error } = await addCustomProduct(newProductName, selectedSection);
     setAddingProduct(false);
     if (error) {
       Alert.alert('No se pudo crear', error);
@@ -180,7 +181,7 @@ export default function SobrantesScreen() {
     }
     setShowAddProduct(false);
     setNewProductName('');
-    setExpandedFamilies((prev) => new Set(prev).add(newProductFamily));
+    setExpandedFamilies((prev) => new Set(prev).add(selectedSection));
   };
 
   const topBar = (
@@ -456,20 +457,20 @@ export default function SobrantesScreen() {
               autoFocus
             />
             <View style={styles.modalFamilies}>
-              {LEFTOVERS_SECTIONS.map((family) => (
+              {addableSections.map((family) => (
                 <Pressable
                   key={family}
                   onPress={() => setNewProductFamily(family)}
                   style={({ pressed }) => [
                     styles.modalFamilyPill,
-                    newProductFamily === family && styles.modalFamilyPillActive,
+                    selectedSection === family && styles.modalFamilyPillActive,
                     pressed && styles.pressed,
                   ]}
                 >
                   <Text
                     style={[
                       styles.modalFamilyText,
-                      newProductFamily === family && styles.modalFamilyTextActive,
+                      selectedSection === family && styles.modalFamilyTextActive,
                     ]}
                   >
                     {family}

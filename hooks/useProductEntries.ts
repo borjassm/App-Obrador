@@ -3,7 +3,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from '@/hooks/useSession';
 import { leftoversDayISO } from '@/lib/workday';
 import { sessionService } from '@/services/session.service';
-import { productService, type Product, type ProductGroup } from '@/services/product.service';
+import { LEFTOVERS_OTHER } from '@/constants/families';
+import {
+  productService,
+  type LeftoversSection,
+  type Product,
+  type ProductGroup,
+} from '@/services/product.service';
 
 export interface ProductEntry {
   product: Product;
@@ -20,6 +26,8 @@ interface UseProductEntriesReturn {
   sessionStatus: string;
   dayISO: string;
   groups: ProductGroup[];
+  /** Secciones donde se puede dar de alta un producto puntual */
+  addableSections: string[];
   entries: Map<string, ProductEntry>;
   loading: boolean;
   saving: boolean;
@@ -54,6 +62,7 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
   const [sessionStatus, setSessionStatus] = useState('none');
   const [dayISO, setDayISO] = useState(() => leftoversDayISO());
   const [groups, setGroups] = useState<ProductGroup[]>([]);
+  const [sections, setSections] = useState<LeftoversSection[]>([]);
   const [entries, setEntries] = useState<Map<string, ProductEntry>>(new Map());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -78,12 +87,14 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
     if (showSpinner || keyChanged) setLoading(true);
     setDayISO(day);
 
-    const [existingSession, productGroups] = await Promise.all([
+    const [existingSession, sectionList] = await Promise.all([
       sessionService.getSessionStatus(locationId, day),
-      productService.listForLeftovers(),
+      productService.listLeftoversSections(),
     ]);
+    const productGroups = await productService.listForLeftovers(sectionList);
     setSessionId(existingSession?.id ?? null);
     setSessionStatus(existingSession?.status ?? 'none');
+    setSections(sectionList);
     setGroups(productGroups);
 
     const existingEntries = existingSession
@@ -226,7 +237,9 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
     return { error: error ? new Error(String(error)) : null };
   }, [sessionId]);
 
-  const addCustomProduct = useCallback(async (name: string, section: string) => {
+  const addCustomProduct = useCallback(async (name: string, sectionName: string) => {
+    const section = sections.find((s) => s.name === sectionName);
+    if (!section) return { error: 'Elige una sección.' };
     const { error } = await productService.createCustom(name, section);
     if (error) {
       const message = error.code === '23505'
@@ -236,7 +249,7 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
     }
     await load(false);
     return { error: null };
-  }, [load]);
+  }, [load, sections]);
 
   let totalSobrantes = 0;
   let totalDescartado = 0;
@@ -254,6 +267,7 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
     sessionStatus,
     dayISO,
     groups,
+    addableSections: sections.map((s) => s.name).filter((n) => n !== LEFTOVERS_OTHER),
     entries,
     loading,
     saving,

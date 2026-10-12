@@ -703,6 +703,7 @@ export type Database = {
           leftovers_order: number | null
           name: string
           sale_price: number | null
+          show_in_leftovers: boolean
         }
         Insert: {
           created_at?: string
@@ -716,6 +717,7 @@ export type Database = {
           leftovers_order?: number | null
           name: string
           sale_price?: number | null
+          show_in_leftovers?: boolean
         }
         Update: {
           created_at?: string
@@ -729,6 +731,46 @@ export type Database = {
           leftovers_order?: number | null
           name?: string
           sale_price?: number | null
+          show_in_leftovers?: boolean
+        }
+        Relationships: []
+      }
+      product_aliases: {
+        Row: {
+          alias: string
+          created_at: string
+          product_id: string
+        }
+        Insert: {
+          alias: string
+          created_at?: string
+          product_id: string
+        }
+        Update: {
+          alias?: string
+          created_at?: string
+          product_id?: string
+        }
+        Relationships: []
+      }
+      leftovers_sections: {
+        Row: {
+          is_active: boolean
+          name: string
+          production_family: string | null
+          sort_order: number
+        }
+        Insert: {
+          is_active?: boolean
+          name: string
+          production_family?: string | null
+          sort_order: number
+        }
+        Update: {
+          is_active?: boolean
+          name?: string
+          production_family?: string | null
+          sort_order?: number
         }
         Relationships: []
       }

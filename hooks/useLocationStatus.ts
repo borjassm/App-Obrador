@@ -51,7 +51,8 @@ export function useLocationStatus(locationId: string | undefined) {
       .from('products')
       .select('id', { count: 'exact', head: true })
       .eq('is_active', true)
-      .eq('is_obrador', true);
+      .eq('is_obrador', true)
+      .eq('show_in_leftovers', true);
 
     const status: SessionStatus =
       session?.status === 'closed' ? 'closed' : entryCount > 0 ? 'open' : 'none';
