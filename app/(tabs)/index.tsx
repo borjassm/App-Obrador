@@ -194,9 +194,7 @@ export default function HomeTab() {
       {!loading && !error && locations.length > 0 && (
         <View style={[styles.cards, isTablet && styles.cardsTablet]}>
           {locations.map((loc) => (
-            <View key={loc.id} style={isTablet ? styles.cardCellTablet : undefined}>
-              <LocationCardWithStatus location={loc} isTablet={isTablet} />
-            </View>
+            <LocationCardWithStatus key={loc.id} location={loc} isTablet={isTablet} />
           ))}
         </View>
       )}
@@ -273,14 +271,9 @@ const styles = StyleSheet.create({
   cards: {
     gap: Spacing.lg,
   },
+  // En tablet también una tarjeta por fila (La Nave, Jorge Juan, Olavide)
   cardsTablet: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 20,
-  },
-  cardCellTablet: {
-    flexBasis: '47%',
-    flexGrow: 1,
   },
   center: {
     alignItems: 'center',
