@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 
 import { Colors, Fonts, Radius, Spacing } from '@/constants/theme';
@@ -11,7 +12,13 @@ interface Props {
   disabled?: boolean;
 }
 
-// Contador compacto − valor + para rellenar listas largas sin salir de la fila
+// Tope de lo que se puede escribir a mano (4 cifras)
+export const INLINE_COUNTER_MAX = 9999;
+
+// Contador compacto − valor + para rellenar listas largas sin salir de la fila.
+// El valor también se escribe con el teclado numérico (productos de 100+ uds).
+// Cada tecla se pasa ya a onChange: cuenta aunque se pulse Guardar sin cerrar
+// el teclado, y − / + parten del número escrito.
 export default function InlineCounter({
   label,
   value,
@@ -20,6 +27,21 @@ export default function InlineCounter({
   disabled,
 }: Props) {
   const canDecrease = !disabled && value > 0;
+  // Texto en edición: puede estar vacío mientras se escribe (vacío = 0)
+  const [text, setText] = useState(String(value));
+
+  // Cambios desde fuera (− / +, recarga del día): mostrar el valor nuevo
+  useEffect(() => {
+    setText((t) => (toValue(t) === value ? t : String(value)));
+  }, [value]);
+
+  const handleChangeText = (raw: string) => {
+    // Solo enteros: lo que vaya tras una coma o punto se descarta
+    const digits = raw.split(/[.,]/)[0].replace(/[^0-9]/g, '').replace(/^0+(?=\d)/, '');
+    const next = Math.min(INLINE_COUNTER_MAX, toValue(digits));
+    setText(toValue(digits) > INLINE_COUNTER_MAX ? String(INLINE_COUNTER_MAX) : digits);
+    if (next !== value) onChange(next);
+  };
 
   return (
     <View style={styles.container}>
@@ -28,7 +50,7 @@ export default function InlineCounter({
         <Pressable
           onPress={() => onChange(Math.max(0, value - 1))}
           disabled={!canDecrease}
-          hitSlop={4}
+          hitSlop={HIT_SLOP}
           accessibilityLabel={`Restar ${label}`}
           style={({ pressed }) => [
             styles.btn,
@@ -39,11 +61,23 @@ export default function InlineCounter({
         >
           <MaterialIcons name="remove" size={20} color={Colors.textSecondary} />
         </Pressable>
-        <Text style={[styles.value, value > 0 && { color }]}>{value}</Text>
+        <TextInput
+          value={text}
+          onChangeText={handleChangeText}
+          onBlur={() => setText(String(value))}
+          editable={!disabled}
+          keyboardType="number-pad"
+          inputMode="numeric"
+          returnKeyType="done"
+          maxLength={4}
+          selectTextOnFocus
+          accessibilityLabel={`Cantidad ${label}`}
+          style={[styles.value, value > 0 && { color }]}
+        />
         <Pressable
-          onPress={() => onChange(value + 1)}
+          onPress={() => onChange(Math.min(INLINE_COUNTER_MAX, value + 1))}
           disabled={disabled}
-          hitSlop={4}
+          hitSlop={HIT_SLOP}
           accessibilityLabel={`Sumar ${label}`}
           style={({ pressed }) => [
             styles.btn,
@@ -58,6 +92,15 @@ export default function InlineCounter({
     </View>
   );
 }
+
+function toValue(text: string): number {
+  const n = parseInt(text, 10);
+  return Number.isNaN(n) ? 0 : n;
+}
+
+// Botones de 40 px; con el margen vertical el área táctil llega a 56 px sin
+// ensanchar la fila (en móvil estrecho no caben botones más anchos)
+const HIT_SLOP = { top: 8, bottom: 8, left: 4, right: 4 };
 
 const styles = StyleSheet.create({
   container: {
@@ -92,9 +135,19 @@ const styles = StyleSheet.create({
   btnDisabled: {
     opacity: 0.35,
   },
+  // Recuadro suave: se nota que el número se puede tocar
   value: {
-    minWidth: 30,
+    width: 52,
+    height: 40,
+    paddingHorizontal: 2,
+    paddingVertical: 0,
+    borderRadius: Radius.sm,
+    borderWidth: 1.5,
+    borderColor: Colors.borderLight,
+    backgroundColor: Colors.bgBase,
     textAlign: 'center',
+    textAlignVertical: 'center',
+    includeFontPadding: false,
     fontFamily: Fonts.extraBold,
     fontSize: 18,
     lineHeight: 22,
