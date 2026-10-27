@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  Dimensions,
+  Keyboard,
   Modal,
   Platform,
   Pressable,
@@ -17,6 +19,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import Button from '@/components/Button';
 import CollapsibleSection, { configureCollapseAnimation } from '@/components/CollapsibleSection';
 import ConfirmSheet from '@/components/ConfirmSheet';
+import FilterPills from '@/components/FilterPills';
 import InlineCounter from '@/components/InlineCounter';
 import ProgressPill from '@/components/ProgressPill';
 import { Screen } from '@/components/Screen';
@@ -25,6 +28,7 @@ import { getLocationDisplay } from '@/constants/locations';
 import { Colors, Fonts, Radius, Shadows, Spacing, TABLET_BREAKPOINT, Typography } from '@/constants/theme';
 import { useProductEntries, type ProductEntry } from '@/hooks/useProductEntries';
 import { supabase } from '@/lib/supabase';
+import { isLeftoversDayEditable, leftoversDayLabel, leftoversEditableDays } from '@/lib/workday';
 import type { Product } from '@/services/product.service';
 
 // Confirmación que funciona también en web (Alert.alert con botones no se
@@ -48,9 +52,14 @@ export default function SobrantesScreen() {
   // En móvil estrecho los contadores van debajo del nombre
   const stackRow = width < 560;
 
+  // Día elegido en el selector; null = hoy (sigue al corte de las 5:00)
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+
   const {
     sessionStatus,
     dayISO,
+    todayISO,
+    editable,
     groups,
     addableSections,
     entries,
@@ -69,7 +78,7 @@ export default function SobrantesScreen() {
     reopenDay,
     refresh,
     addCustomProduct,
-  } = useProductEntries(locationId ?? '');
+  } = useProductEntries(locationId ?? '', selectedDay);
 
   const [locationName, setLocationName] = useState('');
   const [expandedFamilies, setExpandedFamilies] = useState<Set<string>>(new Set());
@@ -85,6 +94,41 @@ export default function SobrantesScreen() {
   const [addingProduct, setAddingProduct] = useState(false);
 
   const isClosed = sessionStatus === 'closed';
+  const isToday = dayISO === todayISO;
+
+  // Hoy + los días anteriores que aún se pueden corregir
+  const dayOptions = useMemo(
+    () => leftoversEditableDays().map((day) => ({
+      key: day === todayISO ? 'today' : day,
+      label: leftoversDayLabel(day),
+    })),
+    [todayISO]
+  );
+
+  // Elegir hoy = null, para que siga al corte de las 5:00. Si la app sigue
+  // abierta y el día elegido sale de la ventana, también se vuelve a hoy.
+  useEffect(() => {
+    if (selectedDay && (selectedDay === todayISO || !isLeftoversDayEditable(selectedDay))) {
+      setSelectedDay(null);
+    }
+  }, [selectedDay, todayISO]);
+
+  // Android (edge-to-edge): la ventana no se encoge con el teclado; se deja
+  // hueco abajo para que la lista y el footer (Guardar) queden por encima y el
+  // ScrollView nativo recoloca la fila enfocada. En iOS lo hace el ScrollView
+  // (automaticallyAdjustKeyboardInsets).
+  const [keyboardInset, setKeyboardInset] = useState(0);
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    // Solo lo que tapa de verdad: si la ventana ya se ha encogido, 0
+    const show = Keyboard.addListener('keyboardDidShow', (e) =>
+      setKeyboardInset(Math.max(0, Dimensions.get('window').height - e.endCoordinates.screenY)));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardInset(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (!locationId) return;
@@ -146,6 +190,24 @@ export default function SobrantesScreen() {
     setSavedAt(new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }));
   };
 
+  const handleSelectDay = async (key: string) => {
+    // "Hoy" pasa por su fecha: si el hook se había quedado en el día que se
+    // estaba contando al pasar las 5:00, así se fuerza el cambio (el efecto de
+    // arriba lo devuelve a null)
+    const target = key === 'today' ? todayISO : key;
+    if (target === dayISO) return;
+    if (dirtyCount > 0) {
+      const change = await confirmAsync(
+        'Cambios sin guardar',
+        `Tienes ${dirtyCount} ${dirtyCount === 1 ? 'producto' : 'productos'} sin guardar. Si cambias de día ahora se perderán.`,
+        'Cambiar sin guardar'
+      );
+      if (!change) return;
+    }
+    setSavedAt(null);
+    setSelectedDay(target);
+  };
+
   const handleBack = async () => {
     if (dirtyCount > 0) {
       const leave = await confirmAsync(
@@ -203,10 +265,37 @@ export default function SobrantesScreen() {
     </View>
   );
 
+  const daySelector = (
+    <View style={styles.daySelector}>
+      <FilterPills
+        options={dayOptions}
+        selected={isToday ? 'today' : dayISO}
+        onSelect={handleSelectDay}
+        contentContainerStyle={styles.dayPills}
+      />
+      {!isToday && (
+        <View style={styles.pastBanner}>
+          <MaterialIcons name="history" size={20} color={Colors.warning} />
+          <Text style={styles.pastBannerText}>
+            Estás corrigiendo un día anterior: <Text style={styles.pastBannerDay}>{dateLabel}</Text>
+          </Text>
+          <Pressable
+            onPress={() => handleSelectDay('today')}
+            hitSlop={8}
+            style={({ pressed }) => [styles.pastBannerBtn, pressed && styles.pressed]}
+          >
+            <Text style={styles.pastBannerBtnText}>Volver a hoy</Text>
+          </Pressable>
+        </View>
+      )}
+    </View>
+  );
+
   if (loading) {
     return (
       <Screen>
         {topBar}
+        {daySelector}
         <View style={styles.stateBox}>
           <MaterialIcons name="hourglass-empty" size={48} color={Colors.textMuted} />
           <Text style={styles.stateText}>Cargando productos…</Text>
@@ -229,6 +318,7 @@ export default function SobrantesScreen() {
     return (
       <Screen scrollable>
         {topBar}
+        {daySelector}
         <View style={styles.summaryHero}>
           <MaterialIcons name="check-circle" size={44} color={Colors.success} />
           <Text style={styles.summaryTitle}>Día registrado</Text>
@@ -238,7 +328,9 @@ export default function SobrantesScreen() {
         </View>
 
         {summaryGroups.length === 0 ? (
-          <Text style={styles.stateText}>No se registró ningún sobrante hoy.</Text>
+          <Text style={styles.stateText}>
+            No se registró ningún sobrante {isToday ? 'hoy' : 'ese día'}.
+          </Text>
         ) : (
           summaryGroups.map((group) => (
             <View key={group.family}>
@@ -269,15 +361,20 @@ export default function SobrantesScreen() {
           ))
         )}
 
+        {/* Fuera de la ventana de corrección no se puede reabrir (la BD tampoco lo deja) */}
         <View style={styles.summaryFooter}>
-          <Button
-            title="Modificar registro"
-            variant="ghost"
-            onPress={async () => {
-              const { error } = await reopenDay();
-              if (error) Alert.alert('Error', 'No se pudo reabrir el día.');
-            }}
-          />
+          {editable ? (
+            <Button
+              title="Modificar registro"
+              variant="ghost"
+              onPress={async () => {
+                const { error } = await reopenDay();
+                if (error) Alert.alert('No se pudo reabrir el día', error.message);
+              }}
+            />
+          ) : (
+            <Text style={styles.stateText}>Este día ya no se puede modificar.</Text>
+          )}
         </View>
       </Screen>
     );
@@ -312,7 +409,7 @@ export default function SobrantesScreen() {
     );
 
     const counters = (
-      <View style={styles.counters}>
+      <View style={[styles.counters, stackRow && styles.countersNarrow]}>
         <InlineCounter
           label="Guardado"
           value={saved}
@@ -354,8 +451,10 @@ export default function SobrantesScreen() {
         style={styles.scroll}
         contentContainerStyle={[styles.scrollContent, isTablet && styles.padTablet]}
         keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
       >
         {topBar}
+        {daySelector}
 
         <View style={styles.progressHeader}>
           <ProgressPill current={filledCount} total={totalCount} />
@@ -421,6 +520,7 @@ export default function SobrantesScreen() {
           </Pressable>
         </View>
       </View>
+      {keyboardInset > 0 && <View style={{ height: keyboardInset }} />}
 
       <ConfirmSheet
         visible={showConfirm}
@@ -541,6 +641,49 @@ const styles = StyleSheet.create({
     ...Typography.meta,
     textTransform: 'capitalize',
   },
+  // Selector de día y aviso de día anterior
+  daySelector: {
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  dayPills: {
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+  },
+  pastBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+    backgroundColor: Colors.warningLight,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.warning,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+  },
+  pastBannerText: {
+    ...Typography.bodyMedium,
+    color: Colors.textPrimary,
+    flexShrink: 1,
+    flexGrow: 1,
+  },
+  pastBannerDay: {
+    fontFamily: Fonts.bold,
+    textTransform: 'capitalize',
+  },
+  pastBannerBtn: {
+    minHeight: 40,
+    paddingHorizontal: Spacing.md,
+    borderRadius: Radius.sm,
+    backgroundColor: Colors.bgCard,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pastBannerBtnText: {
+    ...Typography.labelMedium,
+    color: Colors.warning,
+  },
   stateBox: {
     alignItems: 'center',
     gap: Spacing.md,
@@ -620,6 +763,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-end',
     gap: Spacing.lg,
+  },
+  // Dos contadores de 140 px: en un móvil de 360 px solo caben con hueco de 12
+  countersNarrow: {
+    gap: Spacing.md,
   },
   commentInput: {
     marginTop: Spacing.sm,

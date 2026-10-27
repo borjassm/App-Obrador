@@ -84,11 +84,23 @@ export const sessionService = {
       .single();
   },
 
+  // updated = false si la RLS no deja tocar el día (fuera de la ventana de
+  // corrección, 0017): un UPDATE filtrado no da error, solo 0 filas
   async closeSession(sessionId: string) {
-    return supabase.from('daily_sessions').update({ status: 'closed' as const }).eq('id', sessionId);
+    const { data, error } = await supabase
+      .from('daily_sessions')
+      .update({ status: 'closed' as const })
+      .eq('id', sessionId)
+      .select('id');
+    return { error, updated: (data?.length ?? 0) > 0 };
   },
 
   async reopenSession(sessionId: string) {
-    return supabase.from('daily_sessions').update({ status: 'open' as const }).eq('id', sessionId);
+    const { data, error } = await supabase
+      .from('daily_sessions')
+      .update({ status: 'open' as const })
+      .eq('id', sessionId)
+      .select('id');
+    return { error, updated: (data?.length ?? 0) > 0 };
   },
 };

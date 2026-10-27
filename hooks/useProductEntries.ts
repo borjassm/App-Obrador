@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 
 import { useSession } from '@/hooks/useSession';
-import { leftoversDayISO } from '@/lib/workday';
+import { isLeftoversDayEditable, leftoversDayISO, LEFTOVERS_EDIT_WINDOW_DAYS } from '@/lib/workday';
 import { sessionService } from '@/services/session.service';
 import { LEFTOVERS_OTHER } from '@/constants/families';
 import {
@@ -25,6 +26,10 @@ interface UseProductEntriesReturn {
   sessionId: string | null;
   sessionStatus: string;
   dayISO: string;
+  /** Día de trabajo actual (cambia solo a las 5:00 aunque la app siga abierta) */
+  todayISO: string;
+  /** El día cargado está dentro de la ventana que se puede modificar */
+  editable: boolean;
   groups: ProductGroup[];
   /** Secciones donde se puede dar de alta un producto puntual */
   addableSections: string[];
@@ -46,6 +51,14 @@ interface UseProductEntriesReturn {
   totalCount: number;
 }
 
+const DAY_LOCKED_MESSAGE =
+  `Este día ya no se puede modificar: solo se pueden corregir los últimos ${LEFTOVERS_EDIT_WINDOW_DAYS} días.`;
+
+// La RLS (0017) rechaza escribir fuera de la ventana con 42501
+function isForbidden(error: unknown): boolean {
+  return (error as { code?: string } | null)?.code === '42501';
+}
+
 function isEmpty(e: Pick<ProductEntry, 'savedQty' | 'discardedQty' | 'comment'>): boolean {
   return e.savedQty === 0 && e.discardedQty === 0 && e.comment.trim() === '';
 }
@@ -55,12 +68,15 @@ function isEmpty(e: Pick<ProductEntry, 'savedQty' | 'discardedQty' | 'comment'>)
 // - No se guardan líneas vacías (0 guardado, 0 tirado, sin comentario) salvo
 //   que ya existieran (entonces se ponen a 0 para reflejar la corrección).
 // - El día de trabajo cierra a las 5:00 (lib/workday).
+// - Se puede elegir un día anterior (selectedDay) dentro de la ventana de
+//   LEFTOVERS_EDIT_WINDOW_DAYS; null = hoy. La BD aplica el mismo límite (0017).
 // Los cambios se acumulan en local y se persisten juntos con saveAll().
-export function useProductEntries(locationId: string): UseProductEntriesReturn {
+export function useProductEntries(locationId: string, selectedDay: string | null = null): UseProductEntriesReturn {
   const { session } = useSession();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionStatus, setSessionStatus] = useState('none');
-  const [dayISO, setDayISO] = useState(() => leftoversDayISO());
+  const [dayISO, setDayISO] = useState(() => selectedDay ?? leftoversDayISO());
+  const [todayISO, setTodayISO] = useState(() => leftoversDayISO());
   const [groups, setGroups] = useState<ProductGroup[]>([]);
   const [sections, setSections] = useState<LeftoversSection[]>([]);
   const [entries, setEntries] = useState<Map<string, ProductEntry>>(new Map());
@@ -74,15 +90,39 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
   // Ubicación+día a los que pertenecen las entradas en memoria (la pantalla
   // sigue montada al cambiar de tienda o al pasar el corte de las 5:00)
   const loadedKeyRef = useRef<string | null>(null);
+  // Día cargado en modo "hoy" (sin día elegido) y contador de cargas
+  const loadedTodayRef = useRef<string | null>(null);
+  const loadReqRef = useRef(0);
+
+  // Con la app abierta, "hoy" avanza al pasar las 5:00
+  useEffect(() => {
+    const tick = () => setTodayISO(leftoversDayISO());
+    const timer = setInterval(tick, 60_000);
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') tick();
+    });
+    return () => {
+      clearInterval(timer);
+      sub.remove();
+    };
+  }, []);
 
   const load = useCallback(async (showSpinner: boolean) => {
     if (!locationId || !session?.user.id) return;
-    const day = leftoversDayISO();
+    // En "hoy", si pasan las 5:00 con cambios sin guardar, se sigue en el día
+    // que se estaba contando (sigue dentro de la ventana) para no perderlos
+    const hasDirty = [...entriesRef.current.values()].some((e) => e.dirty);
+    const keepCountingDay = !selectedDay && hasDirty && !!loadedTodayRef.current
+      && loadedKeyRef.current === `${locationId}_${loadedTodayRef.current}`;
+    const day = selectedDay ?? (keepCountingDay ? loadedTodayRef.current! : leftoversDayISO());
     const key = `${locationId}_${day}`;
     const keyChanged = loadedKeyRef.current !== key;
+    const req = ++loadReqRef.current;
     if (keyChanged) {
       entriesRef.current = new Map();
       setEntries(new Map());
+      sessionIdRef.current = null;
+      setSessionId(null);
     }
     if (showSpinner || keyChanged) setLoading(true);
     setDayISO(day);
@@ -92,6 +132,8 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
       productService.listLeftoversSections(),
     ]);
     const productGroups = await productService.listForLeftovers(sectionList);
+    // Se ha cambiado de día mientras cargaba: manda la carga más reciente
+    if (req !== loadReqRef.current) return;
     setSessionId(existingSession?.id ?? null);
     setSessionStatus(existingSession?.status ?? 'none');
     setSections(sectionList);
@@ -100,6 +142,7 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
     const existingEntries = existingSession
       ? (await sessionService.getSessionWithEntries(existingSession.id)).entries
       : [];
+    if (req !== loadReqRef.current) return;
 
     // Sin pisar cambios locales pendientes de guardar
     const prevEntries = entriesRef.current;
@@ -122,9 +165,11 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
     }
 
     loadedKeyRef.current = key;
+    loadedTodayRef.current = selectedDay ? null : day;
     setEntries(entryMap);
     setLoading(false);
-  }, [locationId, session?.user.id]);
+    // todayISO: recargar cuando cambia el día de trabajo
+  }, [locationId, session?.user.id, selectedDay, todayISO]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     load(true);
@@ -160,15 +205,15 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
   );
 
   // Devuelve el id del día, creándolo si aún no existe
-  const ensureSession = useCallback(async (): Promise<string | null> => {
-    if (sessionIdRef.current) return sessionIdRef.current;
-    if (!session?.user.id) return null;
-    const { data } = await sessionService.openSession(locationId, dayISO, session.user.id);
-    if (!data) return null;
+  const ensureSession = useCallback(async (): Promise<{ id: string | null; forbidden: boolean }> => {
+    if (sessionIdRef.current) return { id: sessionIdRef.current, forbidden: false };
+    if (!session?.user.id) return { id: null, forbidden: false };
+    const { data, error } = await sessionService.openSession(locationId, dayISO, session.user.id);
+    if (!data) return { id: null, forbidden: isForbidden(error) };
     sessionIdRef.current = data.id;
     setSessionId(data.id);
     setSessionStatus(data.status);
-    return data.id;
+    return { id: data.id, forbidden: false };
   }, [locationId, dayISO, session?.user.id]);
 
   // Persiste las entradas con cambios pendientes
@@ -183,12 +228,13 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
     setSaving(true);
     const savedIds: string[] = [];
     let failed = false;
+    let forbidden = false;
 
     if (toWrite.length > 0) {
-      const sid = await ensureSession();
+      const { id: sid, forbidden: sessionForbidden } = await ensureSession();
       if (!sid) {
         setSaving(false);
-        return { error: 'No se pudo abrir el registro del día. Revisa la conexión.' };
+        return { error: sessionForbidden ? DAY_LOCKED_MESSAGE : 'No se pudo abrir el registro del día. Revisa la conexión.' };
       }
       for (const [productId, entry] of toWrite) {
         const { error } = await sessionService.upsertSingleEntry(
@@ -196,6 +242,7 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
         );
         if (error) {
           failed = true;
+          if (isForbidden(error)) forbidden = true;
         } else {
           savedIds.push(productId);
         }
@@ -215,6 +262,7 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
       return next;
     });
     setSaving(false);
+    if (forbidden) return { error: DAY_LOCKED_MESSAGE };
     return { error: failed ? 'Algunos productos no se pudieron guardar. Inténtalo de nuevo.' : null };
   }, [ensureSession]);
 
@@ -222,19 +270,23 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
     const { error: saveError } = await saveAll();
     if (saveError) return { error: new Error(saveError) };
 
-    const sid = await ensureSession();
-    if (!sid) return { error: new Error('No se pudo abrir el registro del día.') };
+    const { id: sid, forbidden } = await ensureSession();
+    if (!sid) return { error: new Error(forbidden ? DAY_LOCKED_MESSAGE : 'No se pudo abrir el registro del día.') };
 
-    const { error } = await sessionService.closeSession(sid);
-    if (!error) setSessionStatus('closed');
-    return { error: error ? new Error(String(error)) : null };
+    const { error, updated } = await sessionService.closeSession(sid);
+    if (error) return { error: new Error(error.message) };
+    if (!updated) return { error: new Error(DAY_LOCKED_MESSAGE) };
+    setSessionStatus('closed');
+    return { error: null };
   }, [saveAll, ensureSession]);
 
   const reopenDay = useCallback(async () => {
     if (!sessionId) return { error: new Error('No session') };
-    const { error } = await sessionService.reopenSession(sessionId);
-    if (!error) setSessionStatus('open');
-    return { error: error ? new Error(String(error)) : null };
+    const { error, updated } = await sessionService.reopenSession(sessionId);
+    if (error) return { error: new Error(error.message) };
+    if (!updated) return { error: new Error(DAY_LOCKED_MESSAGE) };
+    setSessionStatus('open');
+    return { error: null };
   }, [sessionId]);
 
   const addCustomProduct = useCallback(async (name: string, sectionName: string) => {
@@ -266,6 +318,8 @@ export function useProductEntries(locationId: string): UseProductEntriesReturn {
     sessionId,
     sessionStatus,
     dayISO,
+    todayISO,
+    editable: isLeftoversDayEditable(dayISO),
     groups,
     addableSections: sections.map((s) => s.name).filter((n) => n !== LEFTOVERS_OTHER),
     entries,

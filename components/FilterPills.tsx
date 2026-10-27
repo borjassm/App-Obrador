@@ -1,4 +1,4 @@
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { Colors, Radius, Shadows, Spacing, Typography } from '@/constants/theme';
 
@@ -12,15 +12,17 @@ interface Props {
   options: FilterOption[];
   selected: string;
   onSelect: (key: string) => void;
+  /** Para alinear con el contenido de la pantalla (por defecto lleva padding lateral) */
+  contentContainerStyle?: StyleProp<ViewStyle>;
 }
 
 /** Segmented control: pill blanca activa sobre track crema (rediseño v1) */
-export default function FilterPills({ options, selected, onSelect }: Props) {
+export default function FilterPills({ options, selected, onSelect, contentContainerStyle }: Props) {
   return (
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.wrapper}
+      contentContainerStyle={[styles.wrapper, contentContainerStyle]}
     >
       <View style={styles.track}>
         {options.map((option) => {
